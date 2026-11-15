@@ -44,15 +44,18 @@ private fun statusMessage(status: Int?): Int? = when {
     else -> null
 }
 
-/** W1 给出的本地化错误码（errors.ts / i18n 键名）到文案的映射；未知码回退到原文。 */
+/**
+ * 错误码到文案的映射；未知码回退到原文。
+ * 来源：data/api 的 ApiErrorCodes（errors.ts 分类名）、domain/chat 的 UploadErrorCodes（i18n 键名）。
+ */
 @StringRes
 fun errorCodeMessage(code: String?): Int? = when (code) {
-    "replyInvalidApiKey", "apiKeyInvalidRetry" -> R.string.reply_invalid_api_key
-    "replyInsufficientBalance", "insufficientBalance" -> R.string.reply_insufficient_balance
-    "replyRateLimited", "rateLimited" -> R.string.reply_rate_limited
-    "completionServerBusyToast", "uploadServerBusy" -> R.string.server_busy
-    "commonNetworkErrorToast" -> R.string.error_network
-    "uploadFileStatusFailed" -> R.string.upload_failed
+    "unauthorized", "replyInvalidApiKey", "apiKeyInvalidRetry" -> R.string.reply_invalid_api_key
+    "insufficientBalance", "replyInsufficientBalance" -> R.string.reply_insufficient_balance
+    "rateLimited", "replyRateLimited" -> R.string.reply_rate_limited
+    "serverBusy", "completionServerBusyToast", "uploadServerBusy" -> R.string.server_busy
+    "network", "commonNetworkErrorToast" -> R.string.error_network
+    "uploadFileStatusFailed", "uploadParseFailed", "parseFailed" -> R.string.upload_failed
     "replyRefused" -> R.string.reply_refused
     else -> null
 }

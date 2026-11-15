@@ -31,7 +31,7 @@ class UiDependencies(
 ) {
     companion object {
         /** 集成切换点：true 时对话与历史使用 Fake */
-        const val USE_FAKE = true
+        const val USE_FAKE = false
 
         @Volatile
         private var instance: UiDependencies? = null
@@ -57,7 +57,7 @@ class UiDependencies(
                 chatRepository = container.chatRepository,
                 historyBackup = container.historyBackup,
                 verifyApiKey = { container.chatApi.verifyApiKey(it) },
-                settingsLoaded = (settings as? DataStoreSettingsRepository)?.loaded ?: MutableStateFlow(true),
+                settingsLoaded = settings.loaded,
             )
         }
 

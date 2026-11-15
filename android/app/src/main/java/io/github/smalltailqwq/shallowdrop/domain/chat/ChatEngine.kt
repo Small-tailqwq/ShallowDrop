@@ -519,6 +519,19 @@ class ChatEngine(
         }
     }
 
+    /**
+     * 整体替换本地数据（历史导入）：先停止全部生成，期间禁止其他会话操作，完成后刷新缓存。
+     * 对应 Web 版导入时「停止生成、导入期间禁止修改会话」。
+     */
+    suspend fun <T> replaceAll(block: suspend () -> T): T {
+        val result = opMutex.withLock {
+            generations.values.toList().forEach { it.job.cancelAndJoin() }
+            block()
+        }
+        invalidateCache()
+        return result
+    }
+
     /** 启动时把库中残留的 Pending / Streaming 回复标为 Stopped（进程被杀时未能收尾）。 */
     suspend fun markInterruptedOnStartup() {
         for (summary in store.observeSummaries().first()) {
