@@ -1,0 +1,111 @@
+package io.github.smalltailqwq.shallowdrop.ui.markdown
+
+import android.content.ClipData
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+/** 代码块：标题栏左侧语言名、右侧复制；正文高亮、横向滚动、不折行 */
+@Composable
+internal fun CodeBlockView(block: MdBlock.CodeBlock, context: MarkdownContext, modifier: Modifier = Modifier) {
+    val style = context.style
+    val highlighted = remember(block.code, block.language, style) { highlightCode(block.code, block.language, style) }
+    Column(
+        modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .background(style.codeBlockBackground),
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .background(style.codeBlockHeader)
+                .padding(start = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(block.language, style = style.codeLabel, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            CopyButton(block.code, style)
+        }
+        Text(
+            text = highlighted,
+            style = style.codeBlock,
+            softWrap = false,
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+        )
+    }
+}
+
+@Composable
+private fun CopyButton(code: String, style: MarkdownStyle) {
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    var copied by remember { mutableStateOf(false) }
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1500)
+            copied = false
+        }
+    }
+    IconButton(
+        onClick = {
+            scope.launch {
+                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("code", code)))
+                copied = true
+            }
+        },
+        modifier = Modifier.size(36.dp),
+    ) {
+        Icon(
+            imageVector = if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
+            contentDescription = stringResource(android.R.string.copy),
+            tint = style.secondary,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
+internal fun highlightCode(code: String, language: String, style: MarkdownStyle): AnnotatedString {
+    val tokens = CodeHighlighter.highlight(code, language)
+    if (tokens.isEmpty()) return AnnotatedString(code)
+    return buildAnnotatedString {
+        append(code)
+        for (token in tokens) {
+            val span = style.codeTokens[token.kind] ?: continue
+            addStyle(span, token.start, token.end)
+        }
+    }
+}
