@@ -70,6 +70,17 @@ src/
   utils/               通用工具
 ```
 
+## Android 原生版
+
+`android/` 是 Kotlin + Jetpack Compose 实现的原生 App：填入 DeepSeek API Key，在设置中导入官方导出的 `deepseek_data-*.zip` 即可继续对话。需要 JDK 21 与 Android SDK（compileSdk 37）：
+
+```sh
+cd android
+./gradlew :app:assembleDebug
+```
+
+产物位于 `android/app/build/outputs/apk/debug/`。设计与模块划分见 [docs/android/PLAN.md](docs/android/PLAN.md)。
+
 ## 许可证
 
 [MIT](LICENSE)。构建会将许可证复制到 `dist/LICENSE`，分发时请一并保留；第三方依赖遵循各自的许可证。

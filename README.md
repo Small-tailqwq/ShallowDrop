@@ -70,6 +70,17 @@ src/
   utils/               Shared utilities
 ```
 
+## Android app
+
+`android/` contains a native Kotlin + Jetpack Compose app: enter your DeepSeek API key, import the official `deepseek_data-*.zip` export in Settings, and continue your conversations. Requires JDK 21 and the Android SDK (compileSdk 37):
+
+```sh
+cd android
+./gradlew :app:assembleDebug
+```
+
+The APK is written to `android/app/build/outputs/apk/debug/`. See [docs/android/PLAN.md](docs/android/PLAN.md) (Chinese) for the design.
+
 ## License
 
 [MIT](LICENSE). The build copies the license to `dist/LICENSE`; include it when distributing the app. Third-party dependencies are subject to their own licenses.
