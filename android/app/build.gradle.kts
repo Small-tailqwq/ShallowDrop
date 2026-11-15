@@ -36,6 +36,13 @@ android {
         buildConfig = true
     }
 
+    // 应用内切换语言需要完整的语言资源，AAB 不按语言拆分
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
+
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
