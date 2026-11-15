@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="stylesheet" href="katex/katex.min.css">
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+  body { -webkit-user-select: none; user-select: none; }
+  #m { display: inline-block; min-width: 100%; box-sizing: border-box; padding: 4px 0; text-align: center; }
+  #m .katex-display { margin: 0; }
+</style>
+<script src="katex/katex.min.js"></script>
+<script src="katex/contrib/mhchem.min.js"></script>
+</head>
+<body>
+<div id="m"></div>
+<script>
+  // 块级公式渲染页：由 KatexWebView 调用 render()，结果尺寸经 KatexBridge 回传。
+  // 出错时保留上次成功的结果（流式中公式尚未写完），从未成功则回报失败，由原生端显示兜底文字。
+  var el = document.getElementById('m');
+  var everOk = false;
+  var seq = 0;
+  function report(id) {
+    if (id !== seq) return;
+    var html = el.querySelector('.katex-html') || el;
+    var width = Math.ceil(html.scrollWidth);
+    var height = Math.ceil(el.getBoundingClientRect().height);
+    KatexBridge.onRendered(width, height, everOk);
+  }
+  function render(tex, color, fontSize) {
+    var id = ++seq;
+    document.body.style.color = color;
+    document.body.style.fontSize = fontSize + 'px';
+    try {
+      katex.render(tex, el, { displayMode: true, throwOnError: true, strict: false, trust: false, output: 'html' });
+      everOk = true;
+    } catch (e) {
+      // 保留上次结果
+    }
+    report(id);
+    // 字体加载完成后尺寸会变，再量一次
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function () { report(id); });
+    }
+    requestAnimationFrame(function () { report(id); });
+  }
+</script>
+</body>
+</html>
