@@ -50,7 +50,7 @@ internal class ArchiveImporter(private val db: AppDatabase, private val paths: A
 
     private fun readJson(entry: ArchiveZipReader.Entry): JsonElement {
         // 与 TextDecoder 一致：非法字节替换为 U+FFFD，去掉开头的 BOM。
-        val text = entry.readBytes().toString(Charsets.UTF_8).removePrefix("﻿")
+        val text = entry.readBytes().toString(Charsets.UTF_8).removePrefix("\uFEFF")
         return try {
             json.parseToJsonElement(text)
         } catch (_: SerializationException) {

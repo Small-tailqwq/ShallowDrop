@@ -93,7 +93,7 @@ fun AssistantMessage(
             )
         }
         if (answer != null) {
-            MessageMarkdown(answer.markdown, view.sources)
+            MessageMarkdown(answer.markdown, view.sources, streaming = streaming)
         }
         if (waiting) WaitingDots(Modifier.padding(vertical = 8.dp))
         if (notice != null && noticeText != null) {

@@ -215,7 +215,7 @@ private fun StepItem(
                     LocalContentColor provides LocalExtraColors.current.thinkingText,
                     LocalTextStyle provides MaterialTheme.typography.bodyMedium,
                 ) {
-                    MessageMarkdown(step.blocks.joinToString("") { it.thinking }, emptyList())
+                    MessageMarkdown(step.blocks.joinToString("") { it.thinking }, emptyList(), streaming = active)
                 }
             }
         }

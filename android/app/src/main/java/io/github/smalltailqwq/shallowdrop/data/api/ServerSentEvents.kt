@@ -102,7 +102,7 @@ internal inline fun readServerSentEvents(reader: Reader, onEvent: (ServerSentEve
         // 与 TextDecoder 一致，去掉开头的 BOM
         if (first) {
             first = false
-            if (chars[0] == '﻿') start = 1
+            if (chars[0].code == 0xFEFF) start = 1
         }
         for (event in decoder.push(String(chars, start, n - start))) {
             if (!onEvent(event)) return

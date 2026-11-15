@@ -1,5 +1,6 @@
 package io.github.smalltailqwq.shallowdrop.ui.markdown
 
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -42,10 +43,12 @@ internal class MarkdownStyle(
 internal fun rememberMarkdownStyle(): MarkdownStyle {
     val colors = MaterialTheme.colorScheme
     val type = MaterialTheme.typography
-    return remember(colors, type) {
+    // 调用方可通过 LocalTextStyle 缩小正文（如思考块），未指定的字段沿用 bodyLarge
+    val local = LocalTextStyle.current
+    return remember(colors, type, local) {
         val strong = FontWeight.SemiBold
         MarkdownStyle(
-            body = type.bodyLarge,
+            body = type.bodyLarge.merge(local),
             headings = listOf(
                 type.headlineSmall.copy(fontWeight = strong),
                 type.titleLarge.copy(fontWeight = strong),
