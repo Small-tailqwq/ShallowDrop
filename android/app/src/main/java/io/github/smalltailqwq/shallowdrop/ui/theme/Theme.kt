@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -117,6 +118,14 @@ private val AppTypography = Typography().let { base ->
         titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
     )
 }
+
+/** 分组列表页（设置等）的页面底色：与对话页拉开一档，衬托卡片 */
+@Composable
+fun groupedPageColor(): Color = MaterialTheme.colorScheme.run { if (background.luminance() < 0.5f) surfaceContainerLow else surfaceContainer }
+
+/** 分组列表页中卡片的底色 */
+@Composable
+fun groupedCardColor(): Color = MaterialTheme.colorScheme.run { if (background.luminance() < 0.5f) surfaceContainerHigh else surfaceContainerLowest }
 
 /** 消息正文样式 */
 val MessageTextStyle: TextStyle @Composable get() = MaterialTheme.typography.bodyLarge

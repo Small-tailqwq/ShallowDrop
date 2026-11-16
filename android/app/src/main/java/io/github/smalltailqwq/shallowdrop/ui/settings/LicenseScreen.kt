@@ -9,15 +9,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -27,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import io.github.smalltailqwq.shallowdrop.R
+import io.github.smalltailqwq.shallowdrop.ui.components.BackButton
 
 /** MIT 许可全文（res/raw/license.txt，复制自仓库根 LICENSE）。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -38,13 +35,9 @@ fun LicenseScreen(onBack: () -> Unit) {
     }
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.license)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
-                    }
-                },
+            CenterAlignedTopAppBar(
+                title = { Text(stringResource(R.string.license), style = MaterialTheme.typography.titleMedium) },
+                navigationIcon = { BackButton(onBack, Modifier.padding(start = 12.dp)) },
             )
         },
     ) { padding ->

@@ -14,11 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -41,6 +38,7 @@ import io.github.smalltailqwq.shallowdrop.ui.common.ApiKeyForm
 import io.github.smalltailqwq.shallowdrop.ui.common.GetApiKeyButton
 import io.github.smalltailqwq.shallowdrop.ui.common.uiViewModelFactory
 import io.github.smalltailqwq.shallowdrop.ui.components.AppMark
+import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
 
 class OnboardingViewModel(deps: UiDependencies) : ViewModel() {
     val form = ApiKeyForm(viewModelScope, deps.settingsRepository, deps.verifyApiKey)
@@ -71,7 +69,7 @@ fun OnboardingScreen(
     ) {
         // 允许先导入历史再填 Key
         IconButton(onClick = onOpenSettings, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)) {
-            Icon(Icons.Outlined.Settings, contentDescription = stringResource(R.string.settings))
+            DsIcon(R.drawable.ic_settings_outline_16, contentDescription = stringResource(R.string.settings), modifier = Modifier.size(22.dp))
         }
         Column(
             Modifier

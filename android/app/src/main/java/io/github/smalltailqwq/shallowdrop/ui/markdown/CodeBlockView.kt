@@ -10,10 +10,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -33,6 +29,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
+import io.github.smalltailqwq.shallowdrop.R
+import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -89,11 +87,11 @@ private fun CopyButton(code: String, style: MarkdownStyle) {
         },
         modifier = Modifier.size(36.dp),
     ) {
-        Icon(
-            imageVector = if (copied) Icons.Outlined.Check else Icons.Outlined.ContentCopy,
+        DsIcon(
+            if (copied) R.drawable.ic_check_outline_16 else R.drawable.ic_copy_outline_16,
             contentDescription = stringResource(android.R.string.copy),
             tint = style.secondary,
-            modifier = Modifier.size(18.dp),
+            modifier = Modifier.size(16.dp),
         )
     }
 }

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 来源：DeepSeek chat-demo（MIT），src/components/base/icons.tsx IconMenuOutline20；由内联 SVG 逐元素转换，图形未改动 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="20dp"
+    android:height="20dp"
+    android:viewportWidth="20"
+    android:viewportHeight="20">
+    <path
+        android:pathData="M17.2027 4.90034V6.43655H2.79724V4.90034H17.2027Z"
+        android:fillColor="#FF000000" />
+    <path
+        android:pathData="M10.9603 13.0634V14.5996H2.79724V13.0634H10.9603Z"
+        android:fillColor="#FF000000" />
+</vector>
