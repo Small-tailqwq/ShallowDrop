@@ -562,4 +562,47 @@ class ChatEngineTest {
         assertEquals(99L, (reply.blocks[0] as ReplyBlock.Thinking).endedAt)
         assertTrue(engine.state("s").turns.last().canContinue)
     }
+
+    /** 发送后、生成协程调度前立即停止：回复落盘为 Stopped 再解除生成标记，不发请求。 */
+    @Test
+    fun immediateStopBeforeGenerationDispatchSettlesPendingReply() = engineTest { engine ->
+        val id = engine.send(null, "q", emptyList(), options)
+        engine.stop(id)
+        advanceUntilIdle()
+        assertFalse(id in engine.generating.value)
+        assertTrue(api.requests.isEmpty())
+        assertEquals(ReplyStatus.Stopped, lastReply(id).status)
+    }
+
+    /** 即时停止的旧任务收尾后再发新问题：新回复正常完成，旧回复保持 Stopped，互不覆盖。 */
+    @Test
+    fun immediateStopThenResendKeepsBothRepliesSettled() = engineTest { engine ->
+        val id = engine.send(null, "q1", emptyList(), options)
+        engine.stop(id)
+        advanceUntilIdle()
+        val first = lastReply(id)
+
+        api.scripts += {
+            flowOf(messageStart(), textStart(0), textDelta(0, "答"), blockStop(0), messageDelta(StopReason.EndTurn), MessageStreamEvent.MessageStop)
+        }
+        engine.send(id, "q2", emptyList(), options)
+        advanceUntilIdle()
+        val path = visibleMessages(stored(id))
+        assertEquals(ReplyStatus.Stopped, (path.single { it.id == first.id } as Message.Assistant).status)
+        assertEquals(ReplyStatus.Done, lastReply(id).status)
+        assertEquals("答", lastReply(id).text())
+        assertTrue(engine.generating.value.isEmpty())
+        assertEquals(1, api.requests.size)
+    }
+
+    /** 调度前删除：收尾写入发生在删除之前，删除后不会被写回。 */
+    @Test
+    fun deleteBeforeGenerationDispatchIsNotWrittenBack() = engineTest { engine ->
+        val id = engine.send(null, "q", emptyList(), options)
+        engine.delete(id)
+        advanceUntilIdle()
+        assertFalse(id in store.data.value)
+        assertTrue(engine.generating.value.isEmpty())
+        assertTrue(api.requests.isEmpty())
+    }
 }

@@ -642,7 +642,10 @@ class ChatEngine(
         val generation = Generation(titleRequested)
         generations[sessionId] = generation
         generatingIds.update { it + sessionId }
-        val job = scope.launch(start = CoroutineStart.LAZY) {
+        // ATOMIC：调度前就被停止（发送后立即 stop）也会进入协程体，
+        // 由 runGeneration 把 Pending 回复收尾为 Stopped 并落盘后再解除生成标记。
+        // LAZY 启动前取消会跳过协程体，只剩 invokeOnCompletion 清标记，回复永远停在 Pending。
+        val job = scope.launch(start = CoroutineStart.ATOMIC) {
             try {
                 runGeneration(sessionId, initial, request, generation)
             } finally {
@@ -650,9 +653,8 @@ class ChatEngine(
             }
         }
         generation.job = job
-        // 作用域已取消、协程没机会运行时也要解除生成状态
+        // 兜底：协程体异常退出时也要解除生成状态；按 generation 身份移除，不会误清后续任务
         job.invokeOnCompletion { finishGeneration(sessionId, generation) }
-        job.start()
     }
 
     private fun finishGeneration(sessionId: String, generation: Generation) {
@@ -682,6 +684,8 @@ class ChatEngine(
                 var preparing = false
                 var receivedContent = false
                 try {
+                    // ATOMIC 启动不检查取消：已被停止时不再刷新上下文、不发请求
+                    currentCoroutineContext().ensureActive()
                     val model = initial.model ?: settings.settings.value.model
                     val currentRequest = refresh(sessionId, request)
                     val context = compaction.prepare(sessionId, currentRequest.history, currentRequest.question, model)
