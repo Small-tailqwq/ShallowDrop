@@ -196,15 +196,20 @@ class SpeechEnginesTest {
     private class FakePlayer : PcmPlayer {
         val out = ByteArrayOutputStream()
         val writes = mutableListOf<Int>()
+
+        @Volatile
         var flushes = 0
 
+        override val round: Int get() = flushes
+
         @Synchronized
-        override fun write(data: ByteArray, offset: Int, length: Int) {
+        override fun write(data: ByteArray, offset: Int, length: Int, round: Int) {
+            if (round != flushes) return
             writes += length
             out.write(data, offset, length)
         }
 
-        override fun drain() = Unit
+        override fun drain(round: Int) = Unit
 
         override fun flush() {
             flushes++

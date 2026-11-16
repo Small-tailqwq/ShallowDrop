@@ -210,7 +210,7 @@ private class GradientOrbPainter : OrbPainter {
  * 本项目自写的光球着色器。流体不用噪声纹理：对坐标做三层正弦扭曲（swirl），再取正弦得到丝绸状的色带，
  * 没有哈希函数，不存在因浮点精度产生的接缝。输出为预乘 alpha。
  */
-private const val ORB_SHADER = """
+internal const val ORB_SHADER = """
 uniform vec2 uCenter;
 uniform float uRadius;
 uniform float uExtent;
@@ -257,6 +257,10 @@ vec4 main(vec2 fragCoord) {
     float outside = clamp((halo + rings * 0.42) * uGlow * (0.25 + 0.75 * live), 0.0, 1.0);
     outside *= 1.0 - smoothstep(0.72, 1.0, length(fragCoord - uCenter) / uExtent);
     vec3 haloColor = mix(uMid, uLight, 0.3);
+    // 绘制范围的大半在球外：到此为止，不做球内的流体计算（r >= 1 时下面的 inside 恒为 0，结果相同）
+    if (r >= 1.0) {
+        return vec4(haloColor * outside, outside);
+    }
 
     // 球内：越靠边缘采样越远，模拟玻璃球的折射
     float z = sqrt(max(1.0 - r * r, 0.0));

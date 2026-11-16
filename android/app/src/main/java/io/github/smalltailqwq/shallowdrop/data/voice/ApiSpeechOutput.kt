@@ -29,13 +29,20 @@ import okhttp3.Response
 
 /** 24kHz 单声道 16-bit PCM 的播放端 */
 interface PcmPlayer {
-    /** 阻塞写入（缓冲满时等待播放） */
-    fun write(data: ByteArray, offset: Int, length: Int)
+    /**
+     * 当前轮次，每次 [flush] 加一。朗读方在一轮开始时取一次，之后的 [write]、[drain] 都带上它。
+     * 打断来自别的线程，且不等朗读线程退出：旧线程随后的调用带的是旧轮次，播放器据此什么也不做，
+     * 上一轮的音频不会写进下一轮，上一轮的收尾也不会清掉下一轮。
+     */
+    val round: Int
 
-    /** 阻塞到已写入的音频播放完 */
-    fun drain()
+    /** 阻塞写入（缓冲满时等待播放）；[round] 已作废则不写 */
+    fun write(data: ByteArray, offset: Int, length: Int, round: Int)
 
-    /** 立即停止并丢弃缓冲 */
+    /** 阻塞到已写入的音频播放完；[round] 已作废则立即返回 */
+    fun drain(round: Int)
+
+    /** 立即停止并丢弃缓冲，开始新的一轮 */
     fun flush()
 
     /** 此刻正在播放的音频的响度，0..1；没有在播放时为 0。供界面动效使用 */
@@ -47,7 +54,7 @@ interface PcmPlayer {
 /**
  * 记录写入的 PCM（16-bit 小端单声道）在各时间窗内的响度，按播放位置查询。
  * 写入领先于播放（播放器有缓冲），所以不能直接用最新写入的响度，要按播放头所在的帧去取。
- * 写入与查询可在不同线程。
+ * 写入、清零与查询可在不同线程。
  */
 class PcmEnvelope(sampleRate: Int, windowMs: Int = 20, historyMs: Int = 4_000) {
     private val window = (sampleRate * windowMs / 1000).coerceAtLeast(1)
@@ -58,6 +65,7 @@ class PcmEnvelope(sampleRate: Int, windowMs: Int = 20, historyMs: Int = 4_000) {
     private var sum = 0.0
     private var count = 0
 
+    @Synchronized
     fun write(data: ByteArray, offset: Int, length: Int) {
         var i = offset
         val end = offset + length - 1
@@ -88,6 +96,7 @@ class PcmEnvelope(sampleRate: Int, windowMs: Int = 20, historyMs: Int = 4_000) {
         return (rms * LOUDNESS_GAIN).coerceAtMost(1f)
     }
 
+    @Synchronized
     fun reset() {
         frames = 0
         sum = 0.0
@@ -123,6 +132,9 @@ class ApiSpeechOutput(
 
     /** 一次连续朗读的会话；stop 时整体丢弃，换新的 */
     private inner class Session(val key: String, val player: PcmPlayer) {
+        /** 创建时（[enqueue] 持锁，与 [stop] 互斥）播放器所在的轮次 */
+        val round = player.round
+
         @Volatile var failure: Throwable? = null
         val scope = CoroutineScope(SupervisorJob() + io)
         val queue = Channel<Item>(Channel.UNLIMITED)
@@ -166,7 +178,7 @@ class ApiSpeechOutput(
                             var n = start + read
                             hasCarry = n % 2 == 1
                             if (hasCarry) carry = buffer[--n]
-                            if (n > 0) player.write(buffer, 0, n)
+                            if (n > 0) player.write(buffer, 0, n, round)
                         }
                     }
                 } catch (error: CancellationException) {
@@ -177,11 +189,9 @@ class ApiSpeechOutput(
                     Log.w(TAG, "朗读失败", error)
                 } finally {
                     if (item.permit.getAndSet(false)) slots.release()
-                    // stop 之后旧会话的收尾不能影响新会话的计数
-                    if (session === this@Session) {
-                        if (pending.value == 1) runCatching { player.drain() }
-                        pending.update { (it - 1).coerceAtLeast(0) }
-                    }
+                    // 最后一段：等它播完才算读完。等待会阻塞，期间可能已被 stop 并开始了新会话
+                    if (session === this@Session && pending.value == 1) runCatching { player.drain(round) }
+                    finished(this@Session)
                 }
             }
         }
@@ -222,6 +232,15 @@ class ApiSpeechOutput(
         val current = session ?: Session(key, player).also { session = it }
         pending.update { it + 1 }
         current.enqueue(text)
+    }
+
+    /**
+     * [from] 的一段读完（或失败）。stop 之后旧会话的收尾不能动新会话的计数：
+     * 「还是当前会话」的判断与减一须和 [enqueue]、[stop] 互斥，否则新一轮会被提前当作读完。
+     */
+    @Synchronized
+    private fun finished(from: Session) {
+        if (session === from) pending.update { (it - 1).coerceAtLeast(0) }
     }
 
     override suspend fun awaitIdle() {
@@ -281,7 +300,7 @@ class AudioTrackPlayer(
             .setBufferSizeInBytes(bufferBytes)
             .build()
 
-    /** 自上次 flush 以来写入的帧数（单声道 16-bit：字节数 / 2） */
+    /** 自上次清零以来写入的帧数（单声道 16-bit：字节数 / 2） */
     @Volatile
     private var written = 0L
 
@@ -290,44 +309,77 @@ class AudioTrackPlayer(
 
     private val envelope = PcmEnvelope(sampleRate)
 
+    /**
+     * 保护轮次判断与随之进行的操作（往播放器里写、[written]、[playing]、起播、清零）。打断与释放也要拿它，
+     * 所以锁内只做立即返回的操作：写入用非阻塞方式，缓冲满时的等待、等播完的等待都在锁外。
+     * 「核对轮次」与「写进播放器」在同一次持锁内完成，打断插不进两者之间：清空之后不会再有上一轮的音频写进来。
+     */
+    private val lock = Any()
+
+    @Volatile
+    override var round = 0
+        private set
+
+    /** 播放位置；播放器已释放时取不到，按「已播完」算 */
+    private fun head(): Long = runCatching { track.playbackHeadPosition.toLong() }.getOrDefault(Long.MAX_VALUE)
+
     override fun level(): Float =
         if (playing) envelope.levelAt(runCatching { track.playbackHeadPosition.toLong() }.getOrDefault(-1L)) else 0f
 
-    override fun write(data: ByteArray, offset: Int, length: Int) {
-        envelope.write(data, offset, length)
-        // 暂停状态下写满缓冲会一直阻塞：放不下时先开播
-        if (!playing && (written * 2 + length) > bufferBytes / 2) start()
+    override fun write(data: ByteArray, offset: Int, length: Int, round: Int) {
         var done = 0
         while (done < length) {
-            val n = track.write(data, offset + done, length - done)
-            if (n <= 0) return
+            val n = synchronized(lock) {
+                if (round != this.round) return
+                val left = length - done
+                // 非阻塞：缓冲里放得下多少写多少，立即返回
+                val n = track.write(data, offset + done, left, AudioTrack.WRITE_NON_BLOCKING)
+                if (n > 0) {
+                    envelope.write(data, offset + done, n)
+                    written += n / 2
+                }
+                // 攒够起播缓冲就开播；还没开播缓冲就放不下了也开播，否则永远腾不出空间
+                if (!playing && n >= 0 && (written >= startFrames || n < left)) start()
+                n
+            }
+            if (n < 0) return
             done += n
+            // 缓冲满：在锁外等播放腾出空间，每次回来重新核对轮次，被打断即退出
+            if (done < length) Thread.sleep(FULL_WAIT_MS)
         }
-        written += length / 2
-        if (!playing && written >= startFrames) start()
     }
 
+    /** 持锁调用 */
     private fun start() {
         playing = true
         track.play()
     }
 
-    override fun drain() {
-        // 不足起播缓冲的短句：直接开播
-        if (!playing && written > 0) start()
-        val target = written
+    override fun drain(round: Int) {
+        val target = synchronized(lock) {
+            if (round != this.round) return
+            // 不足起播缓冲的短句：直接开播
+            if (!playing && written > 0) start()
+            written
+        }
         // 留出余量：按剩余时长再加 1 秒等待播放头追上
-        val deadline = SystemClock.elapsedRealtime() + (target - track.playbackHeadPosition.toLong()).coerceAtLeast(0) * 1000 / sampleRate + 1000
-        while (track.playbackHeadPosition.toLong() < target && SystemClock.elapsedRealtime() < deadline) {
+        val deadline = SystemClock.elapsedRealtime() + (target - head()).coerceAtLeast(0) * 1000 / sampleRate + 1000
+        while (round == this.round && head() < target && SystemClock.elapsedRealtime() < deadline) {
             Thread.sleep(20)
         }
-        // 这一轮读完：停下并清零，下一轮重新攒起播缓冲
-        reset()
+        // 这一轮读完：停下并清零，下一轮重新攒起播缓冲。等待期间被打断则播放器可能已在播下一轮，不能再清
+        synchronized(lock) {
+            if (round == this.round) rewind()
+        }
     }
 
-    override fun flush() = reset()
+    override fun flush() = synchronized(lock) {
+        round++
+        rewind()
+    }
 
-    private fun reset() {
+    /** 停下并清零（持锁调用）。不换轮次：一轮之内读完一段、稍后又接着读，仍是同一轮 */
+    private fun rewind() {
         runCatching {
             track.pause()
             track.flush()
@@ -338,9 +390,16 @@ class AudioTrackPlayer(
         envelope.reset()
     }
 
-    override fun release() {
+    override fun release() = synchronized(lock) {
+        // 换轮次：还在写入或等播完的线程就此退出，不再访问已释放的播放器
+        round++
         runCatching { track.stop() }
         track.release()
+    }
+
+    private companion object {
+        /** 缓冲满时多久再试一次。缓冲至少 1 秒，这段时间只播掉其中约 2% */
+        const val FULL_WAIT_MS = 20L
     }
 }
 
@@ -348,12 +407,15 @@ class AudioTrackPlayer(
 class TeePcmPlayer(private val inner: PcmPlayer, file: java.io.File) : PcmPlayer {
     private val out = java.io.FileOutputStream(file, true)
 
-    override fun write(data: ByteArray, offset: Int, length: Int) {
-        runCatching { out.write(data, offset, length) }
-        inner.write(data, offset, length)
+    override val round: Int get() = inner.round
+
+    override fun write(data: ByteArray, offset: Int, length: Int, round: Int) {
+        // 被打断后才到的音频不会播出，也就不记
+        if (round == inner.round) runCatching { out.write(data, offset, length) }
+        inner.write(data, offset, length, round)
     }
 
-    override fun drain() = inner.drain()
+    override fun drain(round: Int) = inner.drain(round)
 
     override fun flush() = inner.flush()
 

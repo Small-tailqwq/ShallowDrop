@@ -144,12 +144,20 @@ fun VoiceScreen(
         onDispose { view.keepScreenOn = false }
     }
 
-    val hangUp = { onClose(viewModel.hangUp()) }
+    // 只关闭一次：退出过渡期间页面还在，再点挂断或再按返回会重复出栈，把对话页也弹掉
+    var closing by remember { mutableStateOf(false) }
+    val hangUp = {
+        if (!closing) {
+            closing = true
+            onClose(viewModel.hangUp())
+        }
+    }
     BackHandler(onBack = hangUp)
 
     var options by rememberSaveable { mutableStateOf(false) }
     val problem = if (permissionDenied) VoiceProblem.Permission else state.problem
-    val stopped = permissionDenied || state.phase == VoicePhase.Stopped
+    // 挂断后阶段也是 Stopped，但那是正常结束，退出过渡中不显示重试
+    val stopped = !closing && (permissionDenied || state.phase == VoicePhase.Stopped)
     val mood = if (permissionDenied) OrbMood.Stopped else state.phase.mood()
     // 打断与重试给一下触感；聆听中点按没有作用，不振动
     val onOrb = {
@@ -180,7 +188,7 @@ fun VoiceScreen(
             state = state,
             mood = mood,
             look = animateOrbLook(settings.ttsVoice.orbLook),
-            level = { if (state.phase == VoicePhase.Speaking) viewModel.speechLevel() else state.level },
+            level = remember(viewModel) { viewModel::orbLevel },
             status = when {
                 problem != null -> Status(problemText(problem), error = true, busy = false)
                 else -> Status(phaseText(state.phase, muted), error = false, busy = state.phase.isBusy())

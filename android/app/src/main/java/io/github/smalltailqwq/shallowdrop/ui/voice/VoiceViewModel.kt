@@ -11,12 +11,16 @@ import io.github.smalltailqwq.shallowdrop.core.model.TtsVoice
 import io.github.smalltailqwq.shallowdrop.domain.voice.SpeechInput
 import io.github.smalltailqwq.shallowdrop.domain.voice.SpeechOutput
 import io.github.smalltailqwq.shallowdrop.domain.voice.VoiceConversation
+import io.github.smalltailqwq.shallowdrop.domain.voice.VoicePhase
 import io.github.smalltailqwq.shallowdrop.domain.voice.VoiceState
 import io.github.smalltailqwq.shallowdrop.ui.common.uiViewModelFactory
 import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class VoiceViewModel(
@@ -40,7 +44,16 @@ class VoiceViewModel(
         sessionId = sessionId,
     )
 
+    /**
+     * 界面状态。输入音量约每 60ms 变一次，不放进来（恒为 0）：光球逐帧读 [orbLevel]，
+     * 否则聆听期间整页都会跟着音量不停重组。
+     */
     val state: StateFlow<VoiceState> = conversation.state
+        .map { it.copy(level = 0f) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, conversation.state.value.copy(level = 0f))
+
+    /** 已挂断：页面退出过渡期间还能点到光球与重试，不能再把对话重新拉起来 */
+    private var closed = false
 
     private val mutedState = MutableStateFlow(false)
     val muted: StateFlow<Boolean> = mutedState.asStateFlow()
@@ -57,10 +70,12 @@ class VoiceViewModel(
 
     fun onPermissionResult(granted: Boolean) {
         permissionDeniedState.value = !granted
-        if (granted) conversation.start()
+        if (granted && !closed) conversation.start()
     }
 
-    fun interrupt() = conversation.interrupt()
+    fun interrupt() {
+        if (!closed) conversation.interrupt()
+    }
 
     fun toggleMute() {
         mutedState.value = !mutedState.value
@@ -71,8 +86,8 @@ class VoiceViewModel(
         captionsState.value = !captionsState.value
     }
 
-    /** 正在朗读的语音的响度，驱动光球 */
-    fun speechLevel(): Float = output.level
+    /** 光球的音量：说话时为朗读的响度，其余为麦克风输入 */
+    fun orbLevel(): Float = conversation.state.value.let { if (it.phase == VoicePhase.Speaking) output.level else it.level }
 
     /** 换音色：下一句朗读起生效 */
     fun setVoice(voice: TtsVoice) {
@@ -86,8 +101,9 @@ class VoiceViewModel(
 
     /** 挂断并返回语音对话写入的会话 */
     fun hangUp(): String? {
+        closed = true
         conversation.close()
-        return state.value.sessionId
+        return conversation.state.value.sessionId
     }
 
     override fun onCleared() {
