@@ -76,7 +76,10 @@ fun AssistantMessage(
     val responseText = listOfNotNull(answer?.text, noticeText?.takeIf { notice.asResponse })
         .filter { it.isNotEmpty() }
         .joinToString("\n\n")
-    val copyText = responseText.ifEmpty { noticeText.orEmpty() }
+    // 只有错误提示、没有正文时不提供复制；重试放进错误卡片，操作栏不再重复
+    val copyText = responseText
+    val errorOnly = notice != null && !notice.asResponse && responseText.isEmpty()
+    val retryInCard = errorOnly && !refused && turn.canRegenerate
     val waiting = streaming && view.steps.isEmpty() && view.answer == null && !message.thinking
     val copy = rememberCopyAction()
     val uriHandler = LocalUriHandler.current
@@ -100,20 +103,37 @@ fun AssistantMessage(
             if (notice.asResponse) {
                 MessageMarkdown(noticeText, emptyList())
             } else {
-                Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.Top) {
-                    Icon(
-                        Icons.Outlined.ErrorOutline,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 2.dp).size(18.dp),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Column {
-                        Text(noticeText, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-                        when (notice.action) {
-                            NoticeAction.ApiKey -> TextButton(onClick = onChangeApiKey) { Text(stringResource(R.string.change_api_key)) }
-                            NoticeAction.TopUp -> TextButton(onClick = { uriHandler.openUri(TOP_UP_URL) }) { Text(stringResource(R.string.top_up)) }
-                            null -> Unit
+                // 错误卡片：原因 + 就地可点的下一步（重试 / 去充值 / 换 Key），不必去找操作栏里的小图标
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f),
+                    modifier = Modifier.padding(top = 4.dp).fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = if (retryInCard || notice.action != null) 2.dp else 12.dp)) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Icon(
+                                Icons.Outlined.ErrorOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(top = 2.dp).size(18.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                noticeText,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.padding(end = 6.dp),
+                            )
+                        }
+                        Row(Modifier.padding(start = 14.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (retryInCard) {
+                                TextButton(onClick = onRegenerate, enabled = !busy) { Text(stringResource(R.string.retry)) }
+                            }
+                            when (notice.action) {
+                                NoticeAction.ApiKey -> TextButton(onClick = onChangeApiKey) { Text(stringResource(R.string.change_api_key)) }
+                                NoticeAction.TopUp -> TextButton(onClick = { uriHandler.openUri(TOP_UP_URL) }) { Text(stringResource(R.string.top_up)) }
+                                null -> Unit
+                            }
                         }
                     }
                 }
@@ -137,7 +157,9 @@ fun AssistantMessage(
                 }
             }
         }
-        if (!streaming) {
+        // 只剩错误卡片（复制、重试、分支、续写都没有）时不留一行空白操作栏
+        val hasActions = copyText.isNotEmpty() || !retryInCard || turn.siblingCount > 1 || (isLast && turn.canContinue)
+        if (!streaming && hasActions) {
             Row(
                 Modifier.padding(top = 6.dp).height(40.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -146,7 +168,9 @@ fun AssistantMessage(
                 if (copyText.isNotEmpty()) {
                     ActionIcon(Icons.Outlined.ContentCopy, stringResource(R.string.copy), enabled = true) { copy(copyText) }
                 }
-                ActionIcon(Icons.Outlined.Refresh, stringResource(R.string.regenerate), enabled = !busy && !refused && turn.canRegenerate, onClick = onRegenerate)
+                if (!retryInCard) {
+                    ActionIcon(Icons.Outlined.Refresh, stringResource(R.string.regenerate), enabled = !busy && !refused && turn.canRegenerate, onClick = onRegenerate)
+                }
                 BranchSwitcher(turn.siblingIndex, turn.siblingCount, enabled = !busy, onSelect = onSwitchBranch)
                 if (isLast && turn.canContinue) {
                     Spacer(Modifier.width(4.dp))

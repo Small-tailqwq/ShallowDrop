@@ -67,7 +67,11 @@ class RoomSessionStore(
     override suspend fun deleteAll() {
         db.historyLock.withLock {
             dao.clearAll()
+            // 导入已提交但原件尚未换入时，暂存的原件同样属于被删除的数据，不能在之后被换入
+            db.stagingDao().deleteState(StagingDao.STATE_FILES_SWAP_PENDING)
             withContext(io) {
+                paths.stagingDir.deleteRecursively()
+                paths.oldDir.deleteRecursively()
                 paths.dir.deleteRecursively()
                 paths.dir.mkdirs()
             }

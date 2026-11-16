@@ -80,7 +80,16 @@ fun MessageList(
 
     // 内容变化（流式增量、新消息）时按跟随状态滚到底部
     LaunchedEffect(conversation, follow.following) {
-        if (follow.following) listState.scrollToBottom()
+        // 使用数据中的锚点索引，首次布局前 layoutInfo 还没有条目。
+        if (follow.following) listState.scrollToItem(turns.size)
+    }
+    // 流式 Markdown 在后台解析后才增长高度，继续跟随实际布局。
+    LaunchedEffect(listState, follow.following, turns.size) {
+        if (follow.following) {
+            snapshotFlow { listState.canScrollForward }.collect { canForward ->
+                if (canForward && follow.following) listState.requestScrollToItem(turns.size)
+            }
+        }
     }
     // 用户自己滚回底部时恢复跟随
     LaunchedEffect(listState, follow) {

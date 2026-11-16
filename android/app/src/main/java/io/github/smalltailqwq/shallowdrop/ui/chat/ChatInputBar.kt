@@ -11,6 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -144,10 +145,14 @@ fun ChatInputBar(
                 Modifier.fillMaxWidth().padding(start = 10.dp, end = 8.dp, top = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TogglePill(Icons.Outlined.Psychology, stringResource(R.string.thinking_switch), state.settings.thinking, onToggleThinking)
-                Spacer(Modifier.width(8.dp))
-                TogglePill(Icons.Outlined.Language, stringResource(R.string.search_switch), state.settings.search, onToggleSearch)
-                Spacer(Modifier.weight(1f))
+                FlowRow(
+                    modifier = Modifier.weight(1f),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    TogglePill(Icons.Outlined.Psychology, stringResource(R.string.thinking_switch), state.settings.thinking, onToggleThinking)
+                    TogglePill(Icons.Outlined.Language, stringResource(R.string.search_switch), state.settings.search, onToggleSearch)
+                }
                 Box {
                     IconButton(onClick = { attachMenu = true }) {
                         Icon(Icons.Outlined.AttachFile, contentDescription = stringResource(R.string.upload_file))

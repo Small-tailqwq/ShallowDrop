@@ -7,15 +7,19 @@ import io.github.smalltailqwq.shallowdrop.core.model.Message
 import io.github.smalltailqwq.shallowdrop.data.db.AppDatabase
 import io.github.smalltailqwq.shallowdrop.data.db.AttachmentPaths
 import io.github.smalltailqwq.shallowdrop.data.db.DbJson
+import io.github.smalltailqwq.shallowdrop.data.db.ImportStateEntity
 import io.github.smalltailqwq.shallowdrop.data.db.StagingDao
 import io.github.smalltailqwq.shallowdrop.data.db.StagingFileEntity
 import io.github.smalltailqwq.shallowdrop.data.db.StagingMessageEntity
 import io.github.smalltailqwq.shallowdrop.data.db.StagingMessageFileEntity
 import io.github.smalltailqwq.shallowdrop.data.db.StagingSessionEntity
 import java.io.File
+import java.io.IOException
 import java.io.InputStream
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
@@ -44,7 +48,12 @@ internal fun imageType(bytes: ByteArray): String {
  * 会话读完立即写入暂存表，只保留图片路径映射；图片全部读完后逐会话回填 MIME，不改变图片身份。
  * 全部校验通过后在一个事务中用暂存替换正式数据；失败时清理暂存，正式数据不变。
  */
-internal class ArchiveImporter(private val db: AppDatabase, private val paths: AttachmentPaths) {
+internal class ArchiveImporter(
+    private val db: AppDatabase,
+    private val paths: AttachmentPaths,
+    /** 仅测试：在换入原件前调用，抛出异常以模拟磁盘失败 */
+    private val swapFault: () -> Unit = {},
+) {
     private val staging: StagingDao = db.stagingDao()
     private val json = Json
 
@@ -78,25 +87,39 @@ internal class ArchiveImporter(private val db: AppDatabase, private val paths: A
         }
     }
 
+    /** 数据库已提交、图片原件尚未全部换入正式目录 */
+    suspend fun swapPending(): Boolean = staging.state(StagingDao.STATE_FILES_SWAP_PENDING) != null
+
     /** 清空导入暂存：开始导入前清除上次中断遗留的数据，导入失败后清除本次写入。 */
     suspend fun clearStaging() {
+        // 数据库已提交但原件尚未换入时，暂存目录属于已生效的导入，不能删除，留给 finishPendingSwap。
+        if (staging.state(StagingDao.STATE_FILES_SWAP_PENDING) != null) return
         staging.clearStaging()
         paths.stagingDir.deleteRecursively()
     }
 
     /**
      * 提交后把暂存原件目录换入正式目录。数据库提交与目录交换不在同一事务中，
-     * 以 import_state 标记衔接：进程在两者之间中断时，下次调用会继续完成交换。
+     * 以 import_state 标记衔接：进程在两者之间中断或换入失败时，下次调用会继续完成交换。
+     * 标记分两个阶段，保证重试幂等：
+     * - PENDING：旧原件尚未移走。移走后改为 MOVING；
+     * - MOVING：正式目录里只有新导入已换入的原件（以及之后新增的附件），重试时只移动剩余暂存文件，不再清空正式目录。
      */
     suspend fun finishPendingSwap() {
-        if (staging.state(StagingDao.STATE_FILES_SWAP_PENDING) == null) return
-        if (paths.stagingDir.exists()) {
-            paths.oldDir.deleteRecursively()
-            if (paths.dir.exists() && !paths.dir.renameTo(paths.oldDir)) {
-                paths.dir.deleteRecursively()
+        val state = staging.state(StagingDao.STATE_FILES_SWAP_PENDING) ?: return
+        swapFault()
+        if (state != StagingDao.SWAP_MOVING) {
+            if (paths.stagingDir.exists()) {
+                paths.oldDir.deleteRecursively()
+                if (paths.dir.exists() && !paths.dir.renameTo(paths.oldDir)) {
+                    paths.dir.deleteRecursively()
+                }
             }
-            if (!paths.stagingDir.renameTo(paths.dir)) {
-                // 改名失败时逐个移动。
+            staging.putState(ImportStateEntity(StagingDao.STATE_FILES_SWAP_PENDING, StagingDao.SWAP_MOVING))
+        }
+        if (paths.stagingDir.exists()) {
+            if (paths.dir.exists() || !paths.stagingDir.renameTo(paths.dir)) {
+                // 正式目录已存在（上次换入到一半）或改名失败时逐个移动。
                 paths.dir.mkdirs()
                 paths.stagingDir.listFiles()?.forEach { file ->
                     val target = File(paths.dir, file.name)
@@ -105,7 +128,7 @@ internal class ArchiveImporter(private val db: AppDatabase, private val paths: A
                         file.delete()
                     }
                 }
-                paths.stagingDir.deleteRecursively()
+                if (!paths.stagingDir.deleteRecursively()) throw IOException("无法清理导入暂存目录")
             }
         }
         paths.oldDir.deleteRecursively()
@@ -165,9 +188,12 @@ internal class ArchiveImporter(private val db: AppDatabase, private val paths: A
             fail(HistoryErrorCodes.INCOMPLETE)
         }
         updateFileTypes(stored)
-        staging.commit()
-        finishPendingSwap()
-        return ImportResult(sessions = imported.size, messages = messageCount, files = stored.size)
+        // 提交与原件换入不可被取消打断；提交后数据已生效，换入失败留待下次启动或导入导出前重试。
+        withContext(NonCancellable) {
+            staging.commit()
+            runCatching { finishPendingSwap() }
+        }
+        return ImportResult(imported.size, messageCount, stored.size, imagesPending = swapPending())
     }
 
     private suspend fun stageSession(local: LocalSession) {

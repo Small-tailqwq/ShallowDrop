@@ -12,6 +12,7 @@ import io.github.smalltailqwq.shallowdrop.core.contract.SendOptions
 import io.github.smalltailqwq.shallowdrop.core.contract.SettingsRepository
 import io.github.smalltailqwq.shallowdrop.core.model.AppSettings
 import io.github.smalltailqwq.shallowdrop.core.model.ApiException
+import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
 import io.github.smalltailqwq.shallowdrop.core.model.FileAttachment
 import io.github.smalltailqwq.shallowdrop.ui.UiDependencies
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.UiText
@@ -94,9 +95,15 @@ class ChatViewModel(
     init {
         // 当前会话被删除（侧栏或设置页全部删除）后回到新对话
         viewModelScope.launch {
+            // 只有上一次列表结果里存在、这一次消失的会话才算被删除：
+            // 刚新建的会话可能晚于一次旧的列表结果到达，此时它从未在列表中出现过，不能当作已删除。
+            // 首次结果例外（previous 为 null）：进程重建后恢复的会话 id 若已不存在，直接回到新对话。
+            var previous: Set<String>? = null
             repository.sessions.map { list -> list.map { it.id }.toSet() }.collect { ids ->
                 val id = sessionId.value
-                if (id != null && id !in ids) openSession(null)
+                val before = previous
+                if (id != null && id !in ids && (before == null || id in before)) openSession(null)
+                previous = ids
             }
         }
     }
@@ -119,6 +126,9 @@ class ChatViewModel(
     fun toggleThinking() = viewModelScope.launch {
         settingsRepository.setThinking(!settingsRepository.settings.value.thinking)
     }
+
+    /** 顶栏切换模型：写入设置，对之后的提问与重新生成生效 */
+    fun setModel(model: ChatModel) = viewModelScope.launch { settingsRepository.setModel(model) }
 
     fun toggleSearch() = viewModelScope.launch {
         settingsRepository.setSearch(!settingsRepository.settings.value.search)

@@ -56,6 +56,7 @@ fun errorCodeMessage(code: String?): Int? = when (code) {
     "serverBusy", "completionServerBusyToast", "uploadServerBusy" -> R.string.server_busy
     "network", "commonNetworkErrorToast" -> R.string.error_network
     "uploadFileStatusFailed", "uploadParseFailed", "parseFailed" -> R.string.upload_failed
+    "attachmentsRestoring" -> R.string.images_restoring_send
     "replyRefused" -> R.string.reply_refused
     else -> null
 }

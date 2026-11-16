@@ -219,11 +219,17 @@ interface StagingDao {
         copyMessageFiles()
         copyFiles()
         clearStaging()
-        putState(ImportStateEntity(STATE_FILES_SWAP_PENDING, "1"))
+        putState(ImportStateEntity(STATE_FILES_SWAP_PENDING, SWAP_PENDING))
     }
 
     companion object {
         /** 数据库已提交、原件暂存目录尚未换入正式目录 */
         const val STATE_FILES_SWAP_PENDING = "files_swap_pending"
+
+        /** 标记取值：旧原件尚未移走（commit 写入的初始值） */
+        const val SWAP_PENDING = "1"
+
+        /** 标记取值：旧原件已移走，正在把暂存原件移入正式目录 */
+        const val SWAP_MOVING = "2"
     }
 }

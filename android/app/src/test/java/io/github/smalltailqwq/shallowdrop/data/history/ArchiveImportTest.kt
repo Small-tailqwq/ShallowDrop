@@ -276,6 +276,23 @@ class ArchiveImportTest {
     }
 
     @Test
+    fun committedStagingSurvivesCleanup() = runTest {
+        // 提交后、换入前清理暂存（提交后出错或取消的路径）不得删除已生效导入的原件
+        env.paths.stagingDir.mkdirs()
+        File(env.paths.stagingDir, "img9").writeBytes(Fx.PNG)
+        env.db.stagingDao().putState(
+            io.github.smalltailqwq.shallowdrop.data.db.ImportStateEntity(
+                io.github.smalltailqwq.shallowdrop.data.db.StagingDao.STATE_FILES_SWAP_PENDING,
+                "1",
+            ),
+        )
+        io.github.smalltailqwq.shallowdrop.data.history.ArchiveImporter(env.db, env.paths).clearStaging()
+        assertTrue(File(env.paths.stagingDir, "img9").exists())
+        backup.recoverInterruptedImport()
+        assertNotNull(attachments.file("img9"))
+    }
+
+    @Test
     fun exportRoundTrip() = runTest {
         import(standard())
         val imported = allSessions()

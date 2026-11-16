@@ -48,6 +48,9 @@ object UploadErrorCode {
     const val SERVER_BUSY = "uploadServerBusy"
     const val PARSE_FAILED = "uploadParseFailed"
     const val FAILED = "uploadFileStatusFailed"
+
+    /** 导入的图片原件尚未恢复完成，稍后重试 */
+    const val RESTORING = "attachmentsRestoring"
 }
 
 private val PARSE_FAILED_PATTERNS = listOf(
@@ -57,7 +60,14 @@ private val PARSE_FAILED_PATTERNS = listOf(
     Regex("Failed to recognize the file", RegexOption.IGNORE_CASE),
 )
 
+/**
+ * 附件原件暂时取不到：历史导入的会话已生效，但图片原件还没恢复到位。
+ * 此时不发请求（否则图片会被悄悄漏掉），回复记为可重试的 Upload 错误。
+ */
+class AttachmentsRestoringException : Exception("Imported images are still being restored")
+
 fun describeUploadError(error: Throwable): String {
+    if (error is AttachmentsRestoringException) return UploadErrorCode.RESTORING
     if (error is ApiException) {
         val status = error.status
         if (status != null && status >= 500) return UploadErrorCode.SERVER_BUSY

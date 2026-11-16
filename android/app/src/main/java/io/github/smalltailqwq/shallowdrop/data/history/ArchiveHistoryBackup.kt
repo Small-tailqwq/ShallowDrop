@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import io.github.smalltailqwq.shallowdrop.core.contract.HistoryBackup
 import io.github.smalltailqwq.shallowdrop.core.contract.HistoryException
+import io.github.smalltailqwq.shallowdrop.core.contract.ImageRestoreState
 import io.github.smalltailqwq.shallowdrop.core.contract.ImportProgress
 import io.github.smalltailqwq.shallowdrop.core.contract.ImportResult
 import io.github.smalltailqwq.shallowdrop.data.db.AppDatabase
@@ -16,6 +17,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
@@ -31,6 +35,8 @@ class ArchiveHistoryBackup(
     private val openOutput: (Uri) -> OutputStream?,
     notice: ReplyNotice = DefaultReplyNotice(),
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** 仅测试：模拟图片原件换入失败 */
+    swapFault: () -> Unit = {},
 ) : HistoryBackup {
     constructor(context: Context, db: AppDatabase, notice: ReplyNotice = DefaultReplyNotice()) : this(
         db = db,
@@ -49,7 +55,36 @@ class ArchiveHistoryBackup(
         notice = notice,
     )
 
-    private val importer = ArchiveImporter(db, paths)
+    private val importer = ArchiveImporter(db, paths, swapFault)
+
+    private val imageRestoreState = MutableStateFlow(ImageRestoreState.Checking)
+
+    /** 导入图片原件的恢复状态；启动恢复、导入、重试之后更新 */
+    override val imageRestore: StateFlow<ImageRestoreState> = imageRestoreState.asStateFlow()
+
+    private suspend fun refreshImageRestore(): Boolean {
+        val pending = importer.swapPending()
+        imageRestoreState.value = if (pending) ImageRestoreState.Pending else ImageRestoreState.Ready
+        return !pending
+    }
+
+    /**
+     * 尝试完成图片原件的换入并更新状态；失败不抛出，返回图片是否已全部就绪。
+     * 发送消息前、设置页重试与应用启动都走这里。
+     */
+    override suspend fun retryImageRestore(): Boolean =
+        db.historyLock.withLock {
+            withContext(io) {
+                try {
+                    importer.finishPendingSwap()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    // 保持 Pending，留待下次重试
+                }
+                refreshImageRestore()
+            }
+        }
     private val exporter = ArchiveExporter(db, paths, notice)
 
     /**
@@ -83,7 +118,7 @@ class ArchiveHistoryBackup(
                     importer.open(open()).use { reader ->
                         importer.clearStaging()
                         try {
-                            importer.import(reader, onProgress)
+                            importer.import(reader, onProgress).also { refreshImageRestore() }
                         } catch (error: Throwable) {
                             withContext(NonCancellable) { runCatching { importer.clearStaging() } }
                             throw error
@@ -110,7 +145,13 @@ class ArchiveHistoryBackup(
      */
     suspend fun recoverInterruptedImport() {
         db.historyLock.withLock {
-            withContext(io) { mapErrors(HistoryErrorCodes.STORAGE_FAILED) { importer.finishPendingSwap() } }
+            withContext(io) {
+                try {
+                    mapErrors(HistoryErrorCodes.STORAGE_FAILED) { importer.finishPendingSwap() }
+                } finally {
+                    withContext(NonCancellable) { refreshImageRestore() }
+                }
+            }
         }
     }
 
