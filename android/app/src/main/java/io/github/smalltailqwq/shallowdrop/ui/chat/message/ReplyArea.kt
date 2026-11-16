@@ -29,19 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.ExpandLess
-import androidx.compose.material.icons.outlined.ExpandMore
-import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.Psychology
-import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.SearchOff
-import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.Icon
+import androidx.annotation.DrawableRes
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -61,7 +49,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -80,6 +67,7 @@ import io.github.smalltailqwq.shallowdrop.ui.chat.reply.ToolStatus
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.areaTitle
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.isDeepSearch
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.isImageSearch
+import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
 import io.github.smalltailqwq.shallowdrop.ui.theme.LocalExtraColors
 import kotlinx.coroutines.delay
 
@@ -155,11 +143,11 @@ fun ReplyArea(
                     .padding(vertical = 6.dp, horizontal = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    Icons.Outlined.Psychology,
+                DsIcon(
+                    R.drawable.ic_think_outline_16,
                     contentDescription = null,
                     tint = muted,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(16.dp),
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
@@ -168,11 +156,14 @@ fun ReplyArea(
                     color = muted,
                     modifier = Modifier.shimmer(titleActive),
                 )
-                Icon(
-                    if (open) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                Spacer(Modifier.width(4.dp))
+                // 对照 ReplyArea.tsx：展开时向下，收起时向右
+                DsIcon(
+                    if (open) R.drawable.ic_chevron_down_outline_14 else R.drawable.ic_chevron_right_outline_14,
                     contentDescription = null,
                     tint = muted,
-                    modifier = Modifier.size(18.dp),
+                    autoMirror = !open,
+                    modifier = Modifier.size(14.dp),
                 )
             }
         }
@@ -227,7 +218,7 @@ private fun StepItem(
         is Step.Search -> SearchRow(step, message, streaming, isLast, onOpenSources)
         is Step.Open -> OpenRow(step, sources, isLast, onOpenSources)
         is Step.Find -> FindRow(step, isLast)
-        is Step.ReadLink -> TimelineRow(Icons.Outlined.Link, active = false, isLast = isLast) {
+        is Step.ReadLink -> TimelineRow(R.drawable.ic_link_outline_16, active = false, isLast = isLast) {
             ChipFlow {
                 Text(stringResource(R.string.reading_link), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.shimmer(true))
                 step.links.forEach { PageChip(it) }
@@ -239,7 +230,7 @@ private fun StepItem(
 /** 时间线行：左侧图标（或圆点）与贯穿的竖线，右侧内容。 */
 @Composable
 private fun TimelineRow(
-    icon: ImageVector?,
+    @DrawableRes icon: Int?,
     active: Boolean,
     isLast: Boolean,
     failed: Boolean = false,
@@ -265,7 +256,7 @@ private fun TimelineRow(
                 )
             }
             if (icon != null) {
-                Icon(
+                DsIcon(
                     icon,
                     contentDescription = null,
                     tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -322,7 +313,7 @@ private fun SearchRow(
     }
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
     TimelineRow(
-        icon = if (failed) Icons.Outlined.SearchOff else Icons.Outlined.Search,
+        icon = if (failed) R.drawable.ic_search_warning_outline_16 else R.drawable.ic_search_outline_16,
         active = wip,
         isLast = isLast,
         failed = failed && !interrupted,
@@ -385,8 +376,8 @@ private fun PageChip(page: PageItem) {
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = 180.dp),
             )
-            Icon(
-                Icons.AutoMirrored.Outlined.OpenInNew,
+            DsIcon(
+                R.drawable.ic_right_up_outline_14,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp).size(12.dp),
@@ -400,7 +391,7 @@ private fun PageChip(page: PageItem) {
 private fun OpenRow(step: Step.Open, sources: List<Source>, isLast: Boolean, onOpenSources: (List<Source>) -> Unit) {
     val allFailed = step.pages.all { it.status == ToolStatus.Failed }
     val count = step.pages.size
-    TimelineRow(if (allFailed) Icons.Outlined.WarningAmber else Icons.Outlined.Public, active = false, isLast = isLast, failed = allFailed) {
+    TimelineRow(if (allFailed) R.drawable.ic_browse_warning_outline_16 else R.drawable.ic_browse_outline_16, active = false, isLast = isLast, failed = allFailed) {
         if (allFailed) {
             Text(stringResource(R.string.tool_open_fail), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
@@ -433,7 +424,7 @@ private fun OpenRow(step: Step.Open, sources: List<Source>, isLast: Boolean, onO
 @Composable
 private fun FindRow(step: Step.Find, isLast: Boolean) {
     val allFailed = step.patterns.all { it.status == ToolStatus.Failed }
-    TimelineRow(if (allFailed) Icons.Outlined.WarningAmber else Icons.Outlined.Public, active = false, isLast = isLast, failed = allFailed) {
+    TimelineRow(if (allFailed) R.drawable.ic_browse_warning_outline_16 else R.drawable.ic_browse_outline_16, active = false, isLast = isLast, failed = allFailed) {
         if (allFailed) {
             Text(stringResource(R.string.tool_find_fail), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
@@ -451,8 +442,8 @@ private fun FindChip(item: FindItem) {
     Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
         Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
             if (item.status != ToolStatus.Wip) {
-                Icon(
-                    if (failed) Icons.Outlined.Close else Icons.Outlined.Check,
+                DsIcon(
+                    if (failed) R.drawable.ic_close_fill_14 else R.drawable.ic_checked_outline_14,
                     contentDescription = null,
                     tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(end = 4.dp).size(12.dp),

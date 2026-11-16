@@ -18,12 +18,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Public
-import androidx.compose.material.icons.outlined.Refresh
-import androidx.compose.material3.Icon
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -37,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -51,6 +48,7 @@ import io.github.smalltailqwq.shallowdrop.ui.chat.reply.buildReplyView
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.describeReply
 import io.github.smalltailqwq.shallowdrop.ui.common.TOP_UP_URL
 import io.github.smalltailqwq.shallowdrop.ui.common.resolve
+import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
 
 /** 助手回复，对照 AssistantMessage.tsx。 */
 @Composable
@@ -101,11 +99,11 @@ fun AssistantMessage(
                 MessageMarkdown(noticeText, emptyList())
             } else {
                 Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.Top) {
-                    Icon(
-                        Icons.Outlined.ErrorOutline,
+                    DsIcon(
+                        R.drawable.ic_warning_outline_16,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 2.dp).size(18.dp),
+                        modifier = Modifier.padding(top = 3.dp).size(16.dp),
                     )
                     Spacer(Modifier.width(6.dp))
                     Column {
@@ -123,30 +121,31 @@ fun AssistantMessage(
             Surface(
                 onClick = { onOpenSources(view.searchResults) },
                 shape = RoundedCornerShape(50),
-                color = MaterialTheme.colorScheme.surfaceContainer,
-                modifier = Modifier.padding(top = 10.dp),
+                color = Color.Transparent,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.padding(top = 12.dp),
             ) {
-                Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.Public, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                    DsIcon(R.drawable.ic_browse_outline_16, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(6.dp))
                     Text(
                         pluralStringResource(R.plurals.search_summary, view.searchResults.size, view.searchResults.size),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
                     )
                 }
             }
         }
         if (!streaming) {
+            // 操作栏：复制、版本切换、继续生成靠左，重新生成在最右
             Row(
-                Modifier.padding(top = 6.dp).height(40.dp),
+                Modifier.fillMaxWidth().padding(top = 8.dp).height(40.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 if (copyText.isNotEmpty()) {
-                    ActionIcon(Icons.Outlined.ContentCopy, stringResource(R.string.copy), enabled = true) { copy(copyText) }
+                    ActionIcon(R.drawable.ic_copy_outline_16, stringResource(R.string.copy), enabled = true) { copy(copyText) }
                 }
-                ActionIcon(Icons.Outlined.Refresh, stringResource(R.string.regenerate), enabled = !busy && !refused && turn.canRegenerate, onClick = onRegenerate)
                 BranchSwitcher(turn.siblingIndex, turn.siblingCount, enabled = !busy, onSelect = onSwitchBranch)
                 if (isLast && turn.canContinue) {
                     Spacer(Modifier.width(4.dp))
@@ -154,15 +153,17 @@ fun AssistantMessage(
                         Text(stringResource(R.string.continue_generating), style = MaterialTheme.typography.labelMedium)
                     }
                 }
+                Spacer(Modifier.weight(1f))
+                ActionIcon(R.drawable.ic_refresh_outline_16, stringResource(R.string.regenerate), enabled = !busy && !refused && turn.canRegenerate, onClick = onRegenerate)
             }
         }
     }
 }
 
 @Composable
-private fun ActionIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(36.dp)) {
-        Icon(icon, contentDescription = label, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.38f))
+private fun ActionIcon(@DrawableRes icon: Int, label: String, enabled: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(40.dp)) {
+        DsIcon(icon, contentDescription = label, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.38f))
     }
 }
 

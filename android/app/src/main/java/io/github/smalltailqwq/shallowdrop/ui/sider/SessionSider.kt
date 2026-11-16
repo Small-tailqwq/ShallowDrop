@@ -17,16 +17,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AddComment
-import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Edit
-import androidx.compose.material.icons.outlined.Settings
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -44,7 +41,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
@@ -55,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.model.SessionSummary
 import io.github.smalltailqwq.shallowdrop.ui.common.ConfirmDialog
+import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
 
 @Composable
 fun SessionGroupKey.label(): String = when (this) {
@@ -65,7 +62,7 @@ fun SessionGroupKey.label(): String = when (this) {
     is SessionGroupKey.Month -> "%04d-%02d".format(year, month)
 }
 
-/** 侧栏：开启新对话、按时间分组的会话列表（长按重命名 / 删除）、底部设置。 */
+/** 侧栏：顶部胶囊入口（开启新对话）、按时间分组的会话列表（长按重命名 / 删除）、底部设置。 */
 @Composable
 fun SessionSider(
     groups: List<SessionGroup>?,
@@ -81,7 +78,7 @@ fun SessionSider(
     var deleting by remember { mutableStateOf<SessionSummary?>(null) }
 
     Column(modifier.fillMaxSize()) {
-        SiderButton(Icons.Outlined.AddComment, stringResource(R.string.new_chat), onNewChat, Modifier.padding(12.dp))
+        SiderPill(R.drawable.ic_new_chat, stringResource(R.string.new_chat), onNewChat, Modifier.padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 4.dp))
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(bottom = 12.dp)) {
             groups.orEmpty().forEach { group ->
                 item(key = "header-${group.key}", contentType = "header") {
@@ -89,7 +86,7 @@ fun SessionSider(
                         group.key.label(),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 6.dp),
+                        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 14.dp, bottom = 4.dp),
                     )
                 }
                 items(group.sessions, key = { it.id }, contentType = { "session" }) { session ->
@@ -103,8 +100,7 @@ fun SessionSider(
                 }
             }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        SiderButton(Icons.Outlined.Settings, stringResource(R.string.settings), onOpenSettings, Modifier.padding(12.dp))
+        SettingsEntry(onOpenSettings)
     }
 
     renaming?.let { session ->
@@ -132,19 +128,40 @@ fun SessionSider(
     }
 }
 
+/** 侧栏顶部的胶囊按钮 */
 @Composable
-private fun SiderButton(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun SiderPill(@DrawableRes icon: Int, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(50),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = modifier.fillMaxWidth().height(48.dp),
+        modifier = modifier.fillMaxWidth().height(44.dp),
     ) {
         Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(12.dp))
+            DsIcon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(10.dp))
             Text(label, style = MaterialTheme.typography.bodyLarge)
         }
+    }
+}
+
+/** 侧栏底部：圆形图标 + “设置” */
+@Composable
+private fun SettingsEntry(onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.size(36.dp)) {
+            Box(contentAlignment = Alignment.Center) {
+                DsIcon(R.drawable.ic_settings_outline_16, contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(stringResource(R.string.settings), style = MaterialTheme.typography.bodyLarge)
     }
 }
 
@@ -159,14 +176,15 @@ private fun SessionItem(
 ) {
     var menu by remember { mutableStateOf(false) }
     val haptic = LocalHapticFeedback.current
-    Box(Modifier.padding(horizontal = 12.dp)) {
+    Box(Modifier.padding(horizontal = 8.dp)) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
+                .heightIn(min = 44.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .then(
                     if (active) {
-                        Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
+                        Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
                     } else {
                         Modifier
                     },
@@ -178,20 +196,21 @@ private fun SessionItem(
                         menu = true
                     },
                 )
-                .padding(horizontal = 12.dp, vertical = 11.dp),
+                .padding(horizontal = 12.dp, vertical = 9.dp),
+            contentAlignment = Alignment.CenterStart,
         ) {
             Text(
                 session.title.ifEmpty { stringResource(R.string.untitled_chat) },
                 style = MaterialTheme.typography.bodyLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                color = if (active) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.onSurface,
             )
         }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.rename)) },
-                leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                leadingIcon = { DsIcon(R.drawable.ic_edit_outline_16, contentDescription = null, modifier = Modifier.size(18.dp)) },
                 onClick = {
                     menu = false
                     onRename()
@@ -199,7 +218,7 @@ private fun SessionItem(
             )
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
-                leadingIcon = { Icon(Icons.Outlined.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                leadingIcon = { DsIcon(R.drawable.ic_trash_outline_16, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) },
                 onClick = {
                     menu = false
                     onDelete()

@@ -12,12 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.Image
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -36,6 +30,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.model.FileAttachment
+import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
+import io.github.smalltailqwq.shallowdrop.ui.components.FileIcon
 import kotlinx.coroutines.launch
 
 /** 复制到剪贴板；Android 13+ 系统自带提示，低版本弹 Toast。 */
@@ -62,11 +58,22 @@ fun BranchSwitcher(index: Int, count: Int, enabled: Boolean, onSelect: (Int) -> 
     val label = stringResource(R.string.message_versions)
     Row(modifier.semantics { contentDescription = label }, verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { onSelect(index - 1) }, enabled = enabled && index > 0, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowLeft, contentDescription = stringResource(R.string.previous_version), modifier = Modifier.size(18.dp))
+            DsIcon(
+                R.drawable.ic_chevron_right_outline_14,
+                contentDescription = stringResource(R.string.previous_version),
+                flip = true,
+                autoMirror = true,
+                modifier = Modifier.size(14.dp),
+            )
         }
         Text("${index + 1} / $count", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         IconButton(onClick = { onSelect(index + 1) }, enabled = enabled && index < count - 1, modifier = Modifier.size(32.dp)) {
-            Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, contentDescription = stringResource(R.string.next_version), modifier = Modifier.size(18.dp))
+            DsIcon(
+                R.drawable.ic_chevron_right_outline_14,
+                contentDescription = stringResource(R.string.next_version),
+                autoMirror = true,
+                modifier = Modifier.size(14.dp),
+            )
         }
     }
 }
@@ -87,12 +94,7 @@ fun FileChip(file: FileAttachment, modifier: Modifier = Modifier) {
         modifier = modifier.widthIn(max = 240.dp),
     ) {
         Row(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                if (file.isImage) Icons.Outlined.Image else Icons.Outlined.Description,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(22.dp),
-            )
+            FileIcon(file.name, Modifier.size(28.dp))
             Spacer(Modifier.width(8.dp))
             Column(verticalArrangement = Arrangement.Center) {
                 Text(file.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)

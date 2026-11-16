@@ -12,13 +12,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ContentCopy
-import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -40,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.contract.TurnView
 import io.github.smalltailqwq.shallowdrop.core.model.Message
+import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
 import io.github.smalltailqwq.shallowdrop.ui.theme.LocalExtraColors
 
 /** 用户提问：附件 + 气泡；长按复制 / 编辑，编辑后作为兄弟节点重新发送。 */
@@ -116,7 +114,7 @@ fun UserMessage(
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.copy)) },
-                        leadingIcon = { Icon(Icons.Outlined.ContentCopy, contentDescription = null) },
+                        leadingIcon = { DsIcon(R.drawable.ic_copy_outline_16, contentDescription = null, modifier = Modifier.size(18.dp)) },
                         onClick = {
                             menu = false
                             copy(message.content)
@@ -124,7 +122,7 @@ fun UserMessage(
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.edit_message)) },
-                        leadingIcon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
+                        leadingIcon = { DsIcon(R.drawable.ic_edit_outline_16, contentDescription = null, modifier = Modifier.size(18.dp)) },
                         enabled = !busy,
                         onClick = {
                             menu = false

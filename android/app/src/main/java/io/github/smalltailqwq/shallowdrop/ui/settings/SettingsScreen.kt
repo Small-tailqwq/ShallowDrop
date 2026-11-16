@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,24 +22,16 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.DeleteOutline
-import androidx.compose.material.icons.outlined.FileDownload
-import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.SmartToy
-import androidx.compose.material.icons.outlined.Translate
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -48,7 +41,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,9 +51,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,6 +71,10 @@ import io.github.smalltailqwq.shallowdrop.ui.common.ApiKeyField
 import io.github.smalltailqwq.shallowdrop.ui.common.ConfirmDialog
 import io.github.smalltailqwq.shallowdrop.ui.common.GetApiKeyButton
 import io.github.smalltailqwq.shallowdrop.ui.common.resolve
+import io.github.smalltailqwq.shallowdrop.ui.components.BackButton
+import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
+import io.github.smalltailqwq.shallowdrop.ui.theme.groupedCardColor
+import io.github.smalltailqwq.shallowdrop.ui.theme.groupedPageColor
 import java.time.LocalDate
 
 /** TODO 发布前确认开源仓库地址 */
@@ -117,16 +116,14 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
-                    }
-                },
+            CenterAlignedTopAppBar(
+                title = { Text(stringResource(R.string.settings), style = MaterialTheme.typography.titleMedium) },
+                navigationIcon = { BackButton(onBack, Modifier.padding(start = 12.dp)) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = groupedPageColor()),
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
+        containerColor = groupedPageColor(),
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
             Column(
@@ -138,24 +135,24 @@ fun SettingsScreen(
                     .navigationBarsPadding(),
             ) {
                 Section(stringResource(R.string.general)) {
-                    SettingRow(Icons.Outlined.Key, stringResource(R.string.api_key), maskedKey ?: stringResource(R.string.api_key_not_set)) {
+                    SettingRow(rememberVectorPainter(Icons.Outlined.Key), stringResource(R.string.api_key), maskedKey ?: stringResource(R.string.api_key_not_set)) {
                         viewModel.apiKeyForm.reset()
                         dialog = SettingsDialog.ApiKey
                     }
-                    SettingRow(Icons.Outlined.Translate, stringResource(R.string.language), localeLabel(settings.locale)) {
+                    SettingRow(painterResource(R.drawable.ic_globe_language_outline_14), stringResource(R.string.language), localeLabel(settings.locale)) {
                         dialog = SettingsDialog.Language
                     }
-                    SettingRow(Icons.Outlined.DarkMode, stringResource(R.string.theme), themeLabel(settings.theme)) {
+                    SettingRow(painterResource(R.drawable.ic_dark_outline_16), stringResource(R.string.theme), themeLabel(settings.theme)) {
                         dialog = SettingsDialog.Theme
                     }
-                    SettingRow(Icons.Outlined.SmartToy, stringResource(R.string.model), settings.model.id) {
+                    SettingRow(rememberVectorPainter(Icons.Outlined.SmartToy), stringResource(R.string.model), settings.model.id) {
                         dialog = SettingsDialog.Model
                     }
                 }
                 Section(stringResource(R.string.data)) {
                     val importing = task as? DataTask.Importing
                     SettingRow(
-                        Icons.Outlined.FileUpload,
+                        painterResource(R.drawable.ic_upload_outline_14),
                         stringResource(R.string.history_import),
                         progress = importing != null,
                         enabled = !busy,
@@ -170,13 +167,13 @@ fun SettingsScreen(
                         }
                     }
                     SettingRow(
-                        Icons.Outlined.FileDownload,
+                        painterResource(R.drawable.ic_download_outline_16),
                         stringResource(R.string.history_export),
                         progress = task == DataTask.Exporting,
                         enabled = !busy,
                     ) { exportPicker.launch("deepseek_data-${LocalDate.now()}.zip") }
                     SettingRow(
-                        Icons.Outlined.DeleteOutline,
+                        painterResource(R.drawable.ic_trash_outline_16),
                         stringResource(R.string.delete_all),
                         value = if (task == DataTask.Deleting) stringResource(R.string.deleting) else null,
                         danger = true,
@@ -184,9 +181,9 @@ fun SettingsScreen(
                     ) { dialog = SettingsDialog.DeleteAll }
                 }
                 Section(stringResource(R.string.about)) {
-                    SettingRow(Icons.Outlined.Info, stringResource(R.string.version), BuildConfig.VERSION_NAME, chevron = false, onClick = null)
-                    SettingRow(Icons.Outlined.Gavel, stringResource(R.string.license), "MIT", onClick = onOpenLicense)
-                    SettingRow(Icons.Outlined.Code, stringResource(R.string.source_code), trailing = Icons.AutoMirrored.Outlined.OpenInNew) {
+                    SettingRow(rememberVectorPainter(Icons.Outlined.Info), stringResource(R.string.version), BuildConfig.VERSION_NAME, chevron = false, onClick = null)
+                    SettingRow(rememberVectorPainter(Icons.Outlined.Gavel), stringResource(R.string.license), "MIT", onClick = onOpenLicense)
+                    SettingRow(rememberVectorPainter(Icons.Outlined.Code), stringResource(R.string.source_code), trailing = painterResource(R.drawable.ic_right_up_outline_14)) {
                         uriHandler.openUri(SOURCE_CODE_URL)
                     }
                 }
@@ -273,29 +270,30 @@ private fun themeLabel(theme: ThemePreference) = when (theme) {
     ThemePreference.Dark -> stringResource(R.string.theme_dark)
 }
 
+/** 分组：灰色小标题 + 圆角卡片 */
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
     Text(
         title,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 8.dp),
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 14.dp, top = 18.dp, bottom = 8.dp),
     )
-    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerLow) {
-        Column { content() }
+    Surface(shape = RoundedCornerShape(16.dp), color = groupedCardColor()) {
+        Column(Modifier.padding(vertical = 4.dp)) { content() }
     }
 }
 
 @Composable
 private fun SettingRow(
-    icon: ImageVector,
+    icon: Painter,
     title: String,
     value: String? = null,
     danger: Boolean = false,
     enabled: Boolean = true,
     progress: Boolean = false,
     chevron: Boolean = true,
-    trailing: ImageVector? = null,
+    trailing: Painter? = null,
     onClick: (() -> Unit)?,
 ) {
     val color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
@@ -303,11 +301,12 @@ private fun SettingRow(
         Modifier
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, contentDescription = null, tint = if (danger) color else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(16.dp))
+        Icon(icon, contentDescription = null, tint = color.copy(alpha = if (enabled) 1f else 0.5f), modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(14.dp))
         Text(title, style = MaterialTheme.typography.bodyLarge, color = color.copy(alpha = if (enabled) 1f else 0.5f), modifier = Modifier.weight(1f))
         if (value != null) {
             Text(
@@ -321,12 +320,13 @@ private fun SettingRow(
         }
         when {
             progress -> CircularProgressIndicator(Modifier.padding(start = 8.dp).size(18.dp), strokeWidth = 2.dp)
-            trailing != null -> Icon(trailing, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp).size(18.dp))
-            chevron && onClick != null && !danger -> Icon(
-                Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            trailing != null -> Icon(trailing, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp).size(14.dp))
+            chevron && onClick != null && !danger -> DsIcon(
+                R.drawable.ic_chevron_right_outline_14,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp).size(20.dp),
+                autoMirror = true,
+                modifier = Modifier.padding(start = 6.dp).size(14.dp),
             )
         }
     }

@@ -30,14 +30,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AddComment
-import androidx.compose.material.icons.outlined.KeyboardArrowDown
-import androidx.compose.material.icons.outlined.Menu
-import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
@@ -48,6 +43,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
@@ -61,8 +57,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,6 +73,7 @@ import io.github.smalltailqwq.shallowdrop.ui.chat.message.SourcesSheet
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.Source
 import io.github.smalltailqwq.shallowdrop.ui.common.resolve
 import io.github.smalltailqwq.shallowdrop.ui.components.AppMark
+import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
 import io.github.smalltailqwq.shallowdrop.ui.sider.SessionListViewModel
 import io.github.smalltailqwq.shallowdrop.ui.sider.SessionSider
 import kotlinx.coroutines.flow.merge
@@ -80,6 +81,9 @@ import kotlinx.coroutines.launch
 
 /** 宽度不小于该值时侧栏常驻 */
 private val WIDE_BREAKPOINT = 840.dp
+
+/** 侧栏宽度（窄屏抽屉与宽屏常驻相同） */
+private val SIDER_WIDTH = 300.dp
 
 /** 对话页：侧栏（窄屏抽屉 / 宽屏常驻）+ 顶栏 + 消息列表或欢迎 + 输入栏。 */
 @Composable
@@ -146,7 +150,7 @@ fun ChatScreen(
                     exit = shrinkHorizontally() + fadeOut(),
                 ) {
                     Row {
-                        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.width(300.dp).fillMaxHeight()) {
+                        Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.width(SIDER_WIDTH).fillMaxHeight()) {
                             sider(
                                 Modifier.windowInsetsPadding(
                                     WindowInsets.systemBars.only(WindowInsetsSides.Top + WindowInsetsSides.Bottom + WindowInsetsSides.Start),
@@ -160,14 +164,23 @@ fun ChatScreen(
             }
         } else {
             BackHandler(enabled = drawerState.isOpen) { closeDrawer() }
+            val siderWidthPx = with(LocalDensity.current) { SIDER_WIDTH.toPx() }
             ModalNavigationDrawer(
                 drawerState = drawerState,
+                scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.4f),
                 drawerContent = {
-                    ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+                    ModalDrawerSheet(
+                        drawerShape = RectangleShape,
+                        drawerContainerColor = MaterialTheme.colorScheme.background,
+                        modifier = Modifier.width(SIDER_WIDTH),
+                    ) {
                         sider(Modifier)
                     }
                 },
-            ) { content() }
+            ) {
+                // 推入式抽屉：对话页随侧栏一起右移
+                Box(Modifier.graphicsLayer { translationX = siderWidthPx + drawerState.currentOffset }) { content() }
+            }
         }
     }
 }
@@ -205,16 +218,16 @@ private fun ChatContent(
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
+            TopAppBar(
                 title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = onMenu) {
-                        Icon(Icons.Outlined.Menu, contentDescription = stringResource(R.string.open_sidebar))
+                        DsIcon(R.drawable.ic_menu_outline_20, contentDescription = stringResource(R.string.open_sidebar), modifier = Modifier.size(22.dp))
                     }
                 },
                 actions = {
                     IconButton(onClick = { viewModel.openSession(null) }, enabled = state.sessionId != null) {
-                        Icon(Icons.Outlined.AddComment, contentDescription = stringResource(R.string.new_chat))
+                        DsIcon(R.drawable.ic_new_chat_outline_20, contentDescription = stringResource(R.string.new_chat), modifier = Modifier.size(22.dp))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -256,13 +269,14 @@ private fun ChatContent(
                                 follow.following = true
                             }
                         },
+                        shape = CircleShape,
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ) {
-                        Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = stringResource(R.string.scroll_to_bottom))
+                        DsIcon(R.drawable.ic_chevron_down_outline_14, contentDescription = stringResource(R.string.scroll_to_bottom), modifier = Modifier.size(18.dp))
                     }
                 }
             }
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 ChatInputBar(
                     state = state,
                     onTextChange = viewModel::onTextChange,
@@ -276,8 +290,19 @@ private fun ChatContent(
                     onAddAttachments = viewModel::addAttachments,
                     onRemoveAttachment = { viewModel.removeAttachment(it) },
                     onRetryAttachment = viewModel::retryAttachment,
-                    modifier = Modifier.widthIn(max = 800.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+                    modifier = Modifier.widthIn(max = 800.dp).padding(start = 12.dp, end = 12.dp, top = 8.dp),
                 )
+                // 有消息时在输入栏下方提示 AI 生成；新对话保持干净
+                if (conversation != null && conversation.turns.isNotEmpty()) {
+                    Text(
+                        stringResource(R.string.content_caveat),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(vertical = 6.dp),
+                    )
+                } else {
+                    Spacer(Modifier.height(12.dp))
+                }
             }
         }
     }
@@ -287,22 +312,16 @@ private fun ChatContent(
     }
 }
 
-/** 新对话空态，对照 Welcome.tsx：问候语；移动端附 AI 生成提示。 */
+/** 新对话空态，对照 Welcome.tsx：标志 + 问候语；AI 生成提示移到输入栏下方，随对话出现。 */
 @Composable
 private fun Welcome(modifier: Modifier = Modifier) {
     Column(modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        AppMark(Modifier.size(44.dp))
-        Spacer(Modifier.height(16.dp))
+        AppMark(Modifier.size(40.dp))
+        Spacer(Modifier.height(14.dp))
         Text(
             stringResource(R.string.welcome),
-            style = MaterialTheme.typography.headlineSmall,
+            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
             textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            stringResource(R.string.content_caveat),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
