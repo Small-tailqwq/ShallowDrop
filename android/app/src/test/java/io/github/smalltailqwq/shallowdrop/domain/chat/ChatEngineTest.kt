@@ -130,7 +130,7 @@ class ChatEngineTest {
         assertEquals("你好", reply.text())
         assertEquals(ChatModel.Flash, reply.model)
         assertTrue(reply.prefix)
-        assertEquals("1970-01-01,星期四,,Android,中文", reply.latestReminder)
+        assertEquals("1970-01-01,星期四,,App,中文", reply.latestReminder)
 
         val request = api.requests.single()
         assertEquals(ChatEngine.SYSTEM_PROMPT, request.system)
@@ -138,7 +138,7 @@ class ChatEngineTest {
         assertTrue(request.title)
         assertFalse(request.thinking)
         assertFalse(request.hasFiles)
-        assertEquals(MessageParam.LatestReminder("1970-01-01,星期四,,Android,中文"), request.messages[0])
+        assertEquals(MessageParam.LatestReminder("1970-01-01,星期四,,App,中文"), request.messages[0])
         assertEquals("hi", (request.messages[1] as MessageParam.User).text())
         assertTrue(engine.generating.value.isEmpty())
     }

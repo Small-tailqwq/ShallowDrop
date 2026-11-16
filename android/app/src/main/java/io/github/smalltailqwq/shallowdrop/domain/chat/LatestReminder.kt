@@ -11,11 +11,11 @@ import java.util.Locale
  * 模型约定五项信息，逗号连接：日期,星期,位置,平台,语言。
  * - 日期与星期使用设备本地时区，避免 UTC 日期跨日；
  * - 位置设置 Android 暂不支持，固定为空串（与 Web 未设置位置时一致）；
- * - 平台 Web 版为 "Web"，这里为 "Android"。
+ * - 平台 Web 版为 "Web"，原生客户端为 "App"（服务端只接受这两个值，填 "Android" 会被 400 拒绝）。
  */
 
 /** 快照中的平台名 */
-const val REMINDER_PLATFORM = "Android"
+const val REMINDER_PLATFORM = "App"
 
 /** 与 Web 的 Locale 一致：只有简体中文与美式英文；跟随系统时按系统语言是否为中文判断。 */
 enum class ReminderLocale(val tag: String, val language: String) {

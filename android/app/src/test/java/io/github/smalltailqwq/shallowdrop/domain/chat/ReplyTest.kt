@@ -291,8 +291,8 @@ class ReplyTest {
         val zone = ZoneId.of("Asia/Shanghai")
         // 2026-11-15 00:30 上海时间 = 2026-11-14 16:30 UTC，日期按本地时区
         val now = LocalDate.of(2026, 11, 15).atTime(0, 30).atZone(zone).toInstant().toEpochMilli()
-        assertEquals("2026-11-15,星期日,,Android,中文", createLatestReminder(ReminderLocale.ZhCN, now, zone))
-        assertEquals("2026-11-14,Saturday,,Android,English", createLatestReminder(ReminderLocale.EnUS, now, ZoneOffset.UTC))
+        assertEquals("2026-11-15,星期日,,App,中文", createLatestReminder(ReminderLocale.ZhCN, now, zone))
+        assertEquals("2026-11-14,Saturday,,App,English", createLatestReminder(ReminderLocale.EnUS, now, ZoneOffset.UTC))
         assertEquals(ReminderLocale.ZhCN, ReminderLocale.resolve(AppLocale.System, Locale.TRADITIONAL_CHINESE))
         assertEquals(ReminderLocale.EnUS, ReminderLocale.resolve(AppLocale.System, Locale.JAPAN))
         assertEquals(ReminderLocale.EnUS, ReminderLocale.resolve(AppLocale.EnUS, Locale.CHINA))
