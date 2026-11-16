@@ -13,6 +13,7 @@ import io.github.smalltailqwq.shallowdrop.core.model.MessageStreamEvent
 import io.github.smalltailqwq.shallowdrop.core.model.Session
 import io.github.smalltailqwq.shallowdrop.core.model.SessionSummary
 import io.github.smalltailqwq.shallowdrop.core.model.ThemePreference
+import io.github.smalltailqwq.shallowdrop.core.model.TtsVoice
 import java.io.File
 import java.io.InputStream
 import kotlinx.coroutines.flow.Flow
@@ -124,6 +125,9 @@ interface ExportLinkDownloader {
     /** 从粘贴的文本中取出第一个 https 链接；没有时返回 null */
     fun parse(text: String): String?
 
+    /** 文本中的官方导出链接（用于剪贴板自动填入）；其他 https 链接不算 */
+    fun recognize(text: String): String?
+
     /** 下载到应用缓存后交给 [use]，结束后删除临时文件 */
     suspend fun <T> download(link: String, onProgress: (DownloadProgress) -> Unit, use: suspend (Uri) -> T): T
 }
@@ -145,6 +149,9 @@ interface SettingsRepository {
     suspend fun setSearch(enabled: Boolean)
 
     suspend fun setModel(model: ChatModel)
+
+    /** 语音对话与朗读的音色；默认空实现便于测试替身 */
+    suspend fun setTtsVoice(voice: TtsVoice) = Unit
 }
 
 /** 当前路径上的一条消息及其兄弟分支信息（用于 `< 2/3 >` 切换）。 */

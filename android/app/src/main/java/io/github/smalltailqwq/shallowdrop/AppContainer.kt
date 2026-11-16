@@ -11,6 +11,7 @@ import io.github.smalltailqwq.shallowdrop.core.contract.ImportProgress
 import io.github.smalltailqwq.shallowdrop.core.contract.ImportResult
 import io.github.smalltailqwq.shallowdrop.core.contract.SessionStore
 import io.github.smalltailqwq.shallowdrop.data.api.DeepSeekApi
+import io.github.smalltailqwq.shallowdrop.data.api.DeepSeekSpeechApi
 import io.github.smalltailqwq.shallowdrop.data.api.defaultOkHttpClient
 import io.github.smalltailqwq.shallowdrop.data.db.AppDatabase
 import io.github.smalltailqwq.shallowdrop.data.db.AttachmentPaths
@@ -38,6 +39,9 @@ class AppContainer(context: Context) {
     private val httpClient by lazy { defaultOkHttpClient() }
 
     val chatApi: ChatApi by lazy { DeepSeekApi(httpClient) }
+
+    /** 语音识别与合成（/v1/tools/asr、/v1/tools/tts） */
+    val speechApi: DeepSeekSpeechApi by lazy { DeepSeekSpeechApi(httpClient) }
 
     /** 官方 App 导出链接的下载缓存放在 cacheDir/history-link，导入后即删 */
     val exportLinkDownloader: ExportLinkDownloader by lazy {

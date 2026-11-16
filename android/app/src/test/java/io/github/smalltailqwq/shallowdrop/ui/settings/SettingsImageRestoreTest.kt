@@ -100,6 +100,7 @@ class SettingsImageRestoreTest {
         var fail: String? = null
         val downloaded = mutableListOf<String>()
         override fun parse(text: String): String? = text.trim().takeIf { it.startsWith("https://") }
+        override fun recognize(text: String): String? = parse(text)
         override suspend fun <T> download(link: String, onProgress: (DownloadProgress) -> Unit, use: suspend (Uri) -> T): T {
             fail?.let { throw HistoryException(it, it) }
             downloaded += link

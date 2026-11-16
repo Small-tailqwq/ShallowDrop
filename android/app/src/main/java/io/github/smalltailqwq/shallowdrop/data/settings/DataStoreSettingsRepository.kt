@@ -14,6 +14,7 @@ import io.github.smalltailqwq.shallowdrop.core.model.AppLocale
 import io.github.smalltailqwq.shallowdrop.core.model.AppSettings
 import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
 import io.github.smalltailqwq.shallowdrop.core.model.ThemePreference
+import io.github.smalltailqwq.shallowdrop.core.model.TtsVoice
 import java.io.IOException
 import java.security.GeneralSecurityException
 import kotlinx.coroutines.CoroutineScope
@@ -110,6 +111,10 @@ class DataStoreSettingsRepository(
         store.edit { it[Keys.MODEL] = model.id }
     }
 
+    override suspend fun setTtsVoice(voice: TtsVoice) {
+        store.edit { it[Keys.TTS_VOICE] = voice.id }
+    }
+
     private fun Preferences.toSettings(): AppSettings {
         val defaults = AppSettings()
         return AppSettings(
@@ -119,6 +124,8 @@ class DataStoreSettingsRepository(
             thinking = this[Keys.THINKING] ?: defaults.thinking,
             search = this[Keys.SEARCH] ?: defaults.search,
             model = ChatModel.entries.firstOrNull { it.id == this[Keys.MODEL] } ?: defaults.model,
+            // 与 Web 一致：只有 tide 是男声，其余（含缺省）为 stella
+            ttsVoice = if (this[Keys.TTS_VOICE] == TtsVoice.Tide.id) TtsVoice.Tide else TtsVoice.Stella,
         )
     }
 
@@ -132,6 +139,7 @@ class DataStoreSettingsRepository(
         val THINKING = booleanPreferencesKey("thinking")
         val SEARCH = booleanPreferencesKey("search")
         val MODEL = stringPreferencesKey("model")
+        val TTS_VOICE = stringPreferencesKey("tts_voice")
     }
 
     private companion object {

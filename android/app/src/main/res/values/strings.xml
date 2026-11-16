@@ -174,9 +174,13 @@
     <string name="voice_unmute">Unmute</string>
     <string name="voice_hang_up">Hang up</string>
     <string name="voice_captions">Captions</string>
-    <string name="voice_no_recognizer">No speech recognition service on this device</string>
-    <string name="voice_no_synthesizer">No text-to-speech engine on this device</string>
+    <string name="voice_no_recognizer">Cannot use the microphone</string>
+    <string name="voice_no_synthesizer">Cannot play speech. Set your API key first.</string>
     <string name="voice_permission">Microphone access is needed. Tap the orb to allow.</string>
     <string name="voice_network">Speech recognition is offline. Tap the orb to retry.</string>
     <string name="voice_reply_failed">Reply failed. Please say it again.</string>
+    <string name="voice_service_rejected">The speech service rejected the request. Check your API key and balance.</string>
+    <string name="tts_voice">Voice</string>
+    <string name="tts_voice_stella">Stella (female)</string>
+    <string name="tts_voice_tide">Tide (male)</string>
 </resources>

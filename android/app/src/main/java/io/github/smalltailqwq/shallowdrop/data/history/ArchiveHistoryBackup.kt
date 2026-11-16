@@ -1,5 +1,6 @@
 package io.github.smalltailqwq.shallowdrop.data.history
 
+import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import io.github.smalltailqwq.shallowdrop.core.contract.HistoryBackup
@@ -9,6 +10,7 @@ import io.github.smalltailqwq.shallowdrop.core.contract.ImportProgress
 import io.github.smalltailqwq.shallowdrop.core.contract.ImportResult
 import io.github.smalltailqwq.shallowdrop.data.db.AppDatabase
 import io.github.smalltailqwq.shallowdrop.data.db.AttachmentPaths
+import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
 import java.io.InputStream
@@ -92,14 +94,19 @@ class ArchiveHistoryBackup(
      * 对应 Web 的 checkArchiveFormat：调用方可先检查，通过后再停止正在生成的回答并调用 importArchive。
      */
     suspend fun checkArchive(uri: Uri) = withContext(io) {
-        mapErrors(HistoryErrorCodes.READ_FAILED) {
-            val input = openInput(uri) ?: throw FileNotFoundException(uri.toString())
-            importer.open(input).close()
-        }
+        mapErrors(HistoryErrorCodes.READ_FAILED) { openReader(uri).close() }
     }
 
     override suspend fun importArchive(uri: Uri, onProgress: (ImportProgress) -> Unit): ImportResult =
-        importFrom({ openInput(uri) ?: throw FileNotFoundException(uri.toString()) }, onProgress)
+        importWith({ openReader(uri) }, onProgress)
+
+    /** file:// 只来自应用自己的缓存（导出链接的下载），直接随机读取；其余 Uri 先复制为临时文件 */
+    private fun openReader(uri: Uri): ArchiveZipReader {
+        val local = uri.takeIf { it.scheme == ContentResolver.SCHEME_FILE }?.path?.let(::File)
+        if (local != null) return importer.open(local)
+        val input = openInput(uri) ?: throw FileNotFoundException(uri.toString())
+        return importer.open(input)
+    }
 
     override suspend fun exportArchive(uri: Uri) {
         exportTo { openOutput(uri) ?: throw FileNotFoundException(uri.toString()) }
@@ -111,11 +118,14 @@ class ArchiveHistoryBackup(
      * onProgress 在 IO 线程回调。
      */
     suspend fun importFrom(open: () -> InputStream, onProgress: (ImportProgress) -> Unit = {}): ImportResult =
+        importWith({ importer.open(open()) }, onProgress)
+
+    private suspend fun importWith(openReader: () -> ArchiveZipReader, onProgress: (ImportProgress) -> Unit): ImportResult =
         db.historyLock.withLock {
             withContext(io) {
                 mapErrors(HistoryErrorCodes.READ_FAILED) { importer.finishPendingSwap() }
                 mapErrors(HistoryErrorCodes.READ_FAILED) {
-                    importer.open(open()).use { reader ->
+                    openReader().use { reader ->
                         importer.clearStaging()
                         try {
                             importer.import(reader, onProgress).also { refreshImageRestore() }

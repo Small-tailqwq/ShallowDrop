@@ -3,18 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- 语音对话：系统语音识别需要录音权限 -->
+    <!-- 语音对话：本地录音后上传 DeepSeek ASR -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-
-    <!-- Android 11+ 包可见性：查询系统语音识别服务与 TTS 引擎 -->
-    <queries>
-        <intent>
-            <action android:name="android.speech.RecognitionService" />
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.TTS_SERVICE" />
-        </intent>
-    </queries>
 
     <application
         android:name=".App"

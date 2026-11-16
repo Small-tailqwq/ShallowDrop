@@ -163,9 +163,13 @@
     <string name="voice_unmute">取消静音</string>
     <string name="voice_hang_up">挂断</string>
     <string name="voice_captions">字幕</string>
-    <string name="voice_no_recognizer">设备上没有可用的语音识别服务</string>
-    <string name="voice_no_synthesizer">设备上没有可用的语音合成引擎</string>
+    <string name="voice_no_recognizer">无法使用麦克风</string>
+    <string name="voice_no_synthesizer">无法播放语音，请先设置 API Key</string>
     <string name="voice_permission">需要麦克风权限，点按光球授权</string>
     <string name="voice_network">语音识别网络不可用，点按光球重试</string>
     <string name="voice_reply_failed">回复失败，请再说一次</string>
+    <string name="voice_service_rejected">语音服务拒绝了请求，请检查 API Key 与账户余额</string>
+    <string name="tts_voice">朗读音色</string>
+    <string name="tts_voice_stella">海星（女声）</string>
+    <string name="tts_voice_tide">暗潮（男声）</string>
 </resources>

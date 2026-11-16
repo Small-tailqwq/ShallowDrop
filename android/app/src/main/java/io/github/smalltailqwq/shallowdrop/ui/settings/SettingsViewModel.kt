@@ -16,6 +16,7 @@ import io.github.smalltailqwq.shallowdrop.core.contract.SettingsRepository
 import io.github.smalltailqwq.shallowdrop.core.model.AppLocale
 import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
 import io.github.smalltailqwq.shallowdrop.core.model.ThemePreference
+import io.github.smalltailqwq.shallowdrop.core.model.TtsVoice
 import io.github.smalltailqwq.shallowdrop.ui.UiDependencies
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.UiText
 import io.github.smalltailqwq.shallowdrop.ui.common.ApiKeyForm
@@ -85,6 +86,8 @@ class SettingsViewModel(
 
     fun setModel(model: ChatModel) = viewModelScope.launch { settingsRepository.setModel(model) }
 
+    fun setTtsVoice(voice: TtsVoice) = viewModelScope.launch { settingsRepository.setTtsVoice(voice) }
+
     private fun runTask(initial: DataTask, block: suspend () -> UiText) {
         if (taskState.value != null) return
         taskState.value = initial
@@ -101,6 +104,9 @@ class SettingsViewModel(
 
     /** 从粘贴的链接中取出下载地址；不是有效链接时返回 null */
     fun parseLink(text: String): String? = linkDownloader.parse(text)
+
+    /** 剪贴板里的官方导出链接；无关链接不自动填入 */
+    fun clipboardLink(text: String): String? = linkDownloader.recognize(text)
 
     /** 下载官方 App 导出的链接后导入；下载失败不改动本地数据 */
     fun importHistoryFromLink(link: String) = runTask(DataTask.Downloading(null)) {

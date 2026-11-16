@@ -74,6 +74,21 @@ class ExportLinkDownloadTest {
     }
 
     @Test
+    fun recognizesOnlyOfficialExportLinksForClipboard() {
+        // 与官方链接同构的示例（签名与 ID 均为虚构）
+        val official = "https://deepseek-chat-history-exports-prod.obs.cn-east-3.myhuaweicloud.com/00000000-0000-0000-0000-000000000000.zip" +
+            "?response-content-disposition=attachment%3B%20filename%3Ddeepseek_data-2026-01-01.zip&Expires=1&AccessKeyId=X&Signature=Y%3D"
+        assertEquals(official, downloader.recognize(official))
+        assertEquals(official, downloader.recognize("复制的链接：$official"))
+        // 换了存储主机但文件名仍是官方导出
+        val mirrored = "https://other.example.com/a.zip?response-content-disposition=attachment%3B%20filename%3Ddeepseek_data-2026-01-01.zip"
+        assertEquals(mirrored, downloader.recognize(mirrored))
+        assertNull(downloader.recognize("https://www.example.cn/DetailsNew.aspx?id=287"))
+        // 手动粘贴仍接受任意 https 链接
+        assertEquals("https://www.example.cn/a", downloader.parse("https://www.example.cn/a"))
+    }
+
+    @Test
     fun downloadsZipAndDeletesItAfterUse() = runBlocking {
         respond(200, zipBytes)
         val progress = mutableListOf<DownloadProgress>()

@@ -37,6 +37,8 @@ class OkHttpExportLinkDownloader(
 
     override fun parse(text: String): String? = parseExportLink(text)
 
+    override fun recognize(text: String): String? = parseExportLink(text)?.takeIf(::isOfficialExportLink)
+
     override suspend fun <T> download(
         link: String,
         onProgress: (DownloadProgress) -> Unit,
@@ -144,6 +146,17 @@ internal fun isZip(file: File): Boolean {
 
 private val LINK_PATTERN = Regex("""https://[^\s<>"'，。、；：！？（）「」『』【】《》]+""", RegexOption.IGNORE_CASE)
 private const val TRAILING_PUNCTUATION = ".,;:!?)]}>'\""
+
+/**
+ * 官方导出链接的特征（2026-11 实测）：华为云 OBS 签名地址，主机名形如
+ * deepseek-chat-history-exports-prod.obs.cn-east-3.myhuaweicloud.com，
+ * 查询参数的下载文件名为 deepseek_data-日期.zip。任一特征命中即视为导出链接。
+ */
+internal fun isOfficialExportLink(link: String): Boolean {
+    val url = link.toHttpUrlOrNull() ?: return false
+    return url.host.startsWith("deepseek-chat-history-exports") ||
+        url.queryParameterValues("response-content-disposition").any { it?.contains("deepseek_data") == true }
+}
 
 /**
  * 取出文本中第一个 https 链接：官方 App 复制的是纯链接，这里也容忍前后带说明文字或标点。

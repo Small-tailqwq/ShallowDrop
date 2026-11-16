@@ -17,6 +17,9 @@ class AttachmentPaths(filesDir: File) {
     /** 交换目录时暂放旧原件，交换完成即删除 */
     val oldDir = File(filesDir, "attachments-old")
 
+    /** 导入时 SAF 内容的临时副本（读取 ZIP 需要随机访问），读完即删 */
+    val importTempDir = File(filesDir, "import-temp")
+
     fun file(id: String) = File(dir, fileName(id))
 
     fun stagingFile(id: String) = File(stagingDir, fileName(id))

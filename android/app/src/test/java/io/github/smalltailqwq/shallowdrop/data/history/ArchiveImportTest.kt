@@ -163,6 +163,40 @@ class ArchiveImportTest {
         assertNotNull(attachments.file("img3"))
     }
 
+    /** 官方导出的写法：全部条目带数据描述符，STORE 图片的本地文件头大小为 0，只能从中央目录得知 */
+    private fun official(tamper: (String) -> Boolean = { false }) = Fx.descriptorZip(
+        ArchivePaths.MANIFEST to Fx.manifest(),
+        ArchivePaths.USER to """{"id":"x"}""",
+        ArchivePaths.session("sa") to sessionA,
+        ArchivePaths.session("sb") to sessionB,
+        ArchivePaths.INDEX to Fx.index(sessionA, sessionB),
+        "chat_sessions/sa_files/img1_猫.png" to Fx.PNG,
+        "chat_sessions/sb_files/img3_j.jpg" to Fx.JPEG,
+        tamper = tamper,
+    )
+
+    @Test
+    fun importsOfficialDescriptorLayout() = runTest {
+        import(standard())
+        val expected = allSessions()
+        env.db.clearAllTables()
+
+        val result = import(official())
+        assertEquals(2, result.sessions)
+        assertEquals(expected, allSessions())
+        assertArrayEquals(Fx.PNG, attachments.file("img1")!!.readBytes())
+        assertArrayEquals(Fx.JPEG, attachments.file("img3")!!.readBytes())
+    }
+
+    @Test
+    fun rejectsDescriptorMismatchAndTruncation() = runTest {
+        expectFailure(HistoryErrorCodes.INCOMPLETE, official(tamper = { it.endsWith(".png") }))
+        val bytes = official()
+        expectFailure(HistoryErrorCodes.INCOMPLETE, bytes.copyOf(bytes.size - 10))
+        // 失败的导入不留下临时副本
+        assertTrue(env.paths.importTempDir.listFiles().orEmpty().isEmpty())
+    }
+
     @Test
     fun rejectsBadManifestAndVersion() = runTest {
         expectFailure(HistoryErrorCodes.UNRECOGNIZED, "not a zip".toByteArray())

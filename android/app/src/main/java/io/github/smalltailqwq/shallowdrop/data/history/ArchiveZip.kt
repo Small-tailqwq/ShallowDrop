@@ -3,16 +3,17 @@ package io.github.smalltailqwq.shallowdrop.data.history
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
-import java.io.FilterInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
-import java.io.PushbackInputStream
+import java.io.RandomAccessFile
+import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 import java.util.zip.CRC32
+import java.util.zip.DataFormatException
+import java.util.zip.Inflater
 import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /** ZIP 结构损坏或使用了不支持的特性（对应 zipReader.ts 的 ArchiveError）；导入时映射为 INCOMPLETE。 */
@@ -35,43 +36,52 @@ internal fun checkEntryPath(raw: String): String {
 }
 
 /**
- * 流式读取 ZIP（STORE / DEFLATE），不要求整包进内存，对照 zipReader.ts：
- * - 按物理顺序逐条读取，跳过目录条目；条目数据读到末尾时由 ZipInputStream 校验大小与 CRC；
- * - 拒绝 ZIP64 扩展字段、加密、重复条目（目录与同名文件也不能互相覆盖）与非法路径；
- * - 读完后检查中央目录结束记录：条目数与位置必须与实际读到的一致，用于发现截断的文件。
+ * 读取 ZIP（STORE / DEFLATE），对照 zipReader.ts：
+ * - 先读中央目录，按本地文件头偏移排序，逐条核对本地文件头与数据描述符，再逐块解压并校验大小与 CRC；
+ * - 拒绝 ZIP64、加密、分卷、符号链接、重复条目（目录与同名文件也不能互相覆盖）与非法路径；
+ * - 中央目录结束记录的条目数、大小与位置必须自洽，截断的文件因此会被拒绝。
  *
- * 与 Web 版的差异：ZipInputStream 只读本地文件头，中央目录逐项字段（外部属性、符号链接等）不校验；
- * 未置 UTF-8 标志的非 ASCII 文件名按 UTF-8 解码（非法字节仍拒绝）。
+ * 官方导出的图片条目是「STORE + 数据描述符」，本地文件头里的大小与 CRC 都是 0，只能从中央目录得知，
+ * 因此必须随机访问，不能只顺序读取本地文件头。
+ *
+ * 与 Web 版的差异：未置 UTF-8 标志的非 ASCII 文件名按 UTF-8 解码（非法字节仍拒绝）。
+ *
+ * @param deleteOnClose 关闭时删除 [file]（来自 [ArchiveZipReader.spool] 的临时副本）
  */
-internal class ArchiveZipReader(input: InputStream) : Closeable {
-    private val tail = TailCaptureInputStream(input)
-    private val zip: ZipInputStream
-    private val paths = HashSet<String>()
-    private var entriesSeen = 0
+internal class ArchiveZipReader(private val file: File, private val deleteOnClose: Boolean = false) : Closeable {
+    private val raf = RandomAccessFile(file, "r")
+    private val length = raf.length()
+    private var directory: Directory? = null
+    private var index = 0
     private var current: Entry? = null
-    private var finished = false
 
     /** 是否以 ZIP 本地文件头开始 */
-    val isZip: Boolean
-
-    init {
-        // 本地文件头签名 PK\x03\x04，用于在解析前区分 ZIP 与其他文件。
-        val pushback = PushbackInputStream(tail, 4)
-        val magic = ByteArray(4)
-        var read = 0
-        while (read < 4) {
-            val n = pushback.read(magic, read, 4 - read)
-            if (n < 0) break
-            read += n
-        }
-        if (read > 0) pushback.unread(magic, 0, read)
-        isZip = read == 4 && magic[0] == 0x50.toByte() && magic[1] == 0x4b.toByte() && magic[2] == 3.toByte() && magic[3] == 4.toByte()
-        zip = ZipInputStream(pushback, Charsets.UTF_8)
+    val isZip: Boolean = length >= 4 && read(0, 4).let {
+        it[0] == 0x50.toByte() && it[1] == 0x4b.toByte() && it[2] == 3.toByte() && it[3] == 4.toByte()
     }
 
-    inner class Entry(val path: String, val size: Long) : InputStream() {
+    internal class Record(
+        val path: String,
+        val name: ByteArray,
+        val flags: Int,
+        val method: Int,
+        val crc: Long,
+        val compressedSize: Long,
+        val size: Long,
+        val offset: Long,
+    )
+
+    private class Directory(val records: List<Record>, val offset: Long)
+
+    inner class Entry internal constructor(val path: String, val size: Long, private val record: Record, private val start: Long) :
+        InputStream() {
         internal var done = false
         private var written = 0L
+        private var consumed = 0L
+        private val crc = CRC32()
+        private val inflater = if (record.method == ZipEntry.DEFLATED) Inflater(true) else null
+        private val input = ByteArray(READ_CHUNK)
+        private var dummyFed = false
 
         override fun read(): Int {
             val one = ByteArray(1)
@@ -81,15 +91,59 @@ internal class ArchiveZipReader(input: InputStream) : Closeable {
         override fun read(b: ByteArray, off: Int, len: Int): Int {
             if (done) return -1
             if (len == 0) return 0
-            val n = wrap { zip.read(b, off, len) }
+            val n = if (inflater == null) readStored(b, off, len) else readDeflated(inflater, b, off, len)
             if (n < 0) {
-                done = true
-                if (size >= 0 && written != size) invalid("条目大小不符")
+                finishEntry()
                 return -1
             }
             written += n
-            if (size >= 0 && written > size) invalid("条目大小不符")
+            if (written > size) invalid("条目大小不符")
+            crc.update(b, off, n)
             return n
+        }
+
+        private fun readStored(b: ByteArray, off: Int, len: Int): Int {
+            val remaining = record.compressedSize - consumed
+            if (remaining <= 0) return -1
+            val n = minOf(len.toLong(), remaining).toInt()
+            readFully(start + consumed, b, off, n)
+            consumed += n
+            return n
+        }
+
+        private fun readDeflated(inflater: Inflater, b: ByteArray, off: Int, len: Int): Int {
+            while (true) {
+                if (inflater.finished()) return -1
+                val n = try {
+                    inflater.inflate(b, off, len)
+                } catch (error: DataFormatException) {
+                    throw ArchiveFormatException("压缩数据损坏", error)
+                }
+                if (n > 0) return n
+                if (inflater.finished()) return -1
+                if (inflater.needsDictionary()) invalid("压缩数据损坏")
+                if (inflater.needsInput()) {
+                    val remaining = record.compressedSize - consumed
+                    if (remaining > 0) {
+                        val chunk = minOf(input.size.toLong(), remaining).toInt()
+                        readFully(start + consumed, input, 0, chunk)
+                        consumed += chunk
+                        inflater.setInput(input, 0, chunk)
+                    } else if (!dummyFed) {
+                        // nowrap 模式下 zlib 可能需要一个额外的哑字节才能结束
+                        dummyFed = true
+                        inflater.setInput(ByteArray(1), 0, 1)
+                    } else {
+                        invalid("压缩数据被截断")
+                    }
+                }
+            }
+        }
+
+        private fun finishEntry() {
+            done = true
+            inflater?.end()
+            if (written != size || crc.value != record.crc) invalid("条目大小或 CRC 不符")
         }
 
         /** 读完整个条目：会话 JSON 需要完整解析 */
@@ -110,154 +164,184 @@ internal class ArchiveZipReader(input: InputStream) : Closeable {
         override fun close() = Unit
     }
 
-    /** 下一个文件条目；没有更多条目时返回 null。调用方未读完的上一个条目会被读完并校验。 */
+    /** 下一个文件条目（按物理顺序，跳过目录）；没有更多条目时返回 null。上一个条目未读完时先读完并校验。 */
     fun next(): Entry? {
-        if (finished) return null
         current?.let { if (!it.done) it.skip() }
         current = null
-        while (true) {
-            val entry: ZipEntry? = wrap { zip.nextEntry }
-            if (entry == null) {
-                finish()
-                return null
-            }
-            entriesSeen++
-            val path = checkEntryPath(entry.name)
-            checkExtra(entry.extra)
-            if (entry.method != ZipEntry.STORED && entry.method != ZipEntry.DEFLATED) invalid("不支持的压缩方式")
-            val identity = if (path.endsWith('/')) path.dropLast(1) else path
-            if (!paths.add(identity)) invalid("重复条目")
-            if (entry.isDirectory) {
-                if (entry.size > 0) invalid("目录条目带数据")
-                // 目录条目也要读到末尾以完成校验。
-                Entry(path, entry.size).skip()
-                continue
-            }
-            return Entry(path, entry.size).also { current = it }
+        val dir = directory ?: readDirectory().also { directory = it }
+        while (index < dir.records.size) {
+            val record = dir.records[index]
+            val boundary = dir.records.getOrNull(index + 1)?.offset ?: dir.offset
+            index++
+            val start = checkLocalHeader(record, boundary)
+            if (record.path.endsWith('/')) continue
+            return Entry(record.path, record.size, record, start).also { current = it }
         }
+        return null
+    }
+
+    private fun readDirectory(): Directory {
+        if (length < 22) invalid("缺少中央目录")
+        val tailStart = maxOf(0L, length - 22 - 0xffff)
+        val tail = read(tailStart, (length - tailStart).toInt())
+        var end = tail.size - 22
+        while (end >= 0 && (u32(tail, end) != 0x06054b50L || end + 22 + u16(tail, end + 20) != tail.size)) end--
+        if (end < 0) invalid("缺少中央目录")
+        val count = u16(tail, end + 10)
+        val size = u32(tail, end + 12)
+        val offset = u32(tail, end + 16)
+        if (
+            u16(tail, end + 4) != 0 ||
+            u16(tail, end + 6) != 0 ||
+            u16(tail, end + 8) != count ||
+            count == 0xffff ||
+            size == 0xffffffffL ||
+            offset == 0xffffffffL ||
+            offset + size != tailStart + end
+        ) {
+            invalid("中央目录与条目不一致")
+        }
+        val records = ArrayList<Record>(count)
+        val paths = HashSet<String>()
+        var cursor = 0L
+        repeat(count) {
+            if (cursor + 46 > size) invalid("中央目录损坏")
+            val header = read(offset + cursor, 46)
+            if (u32(header, 0) != 0x02014b50L) invalid("中央目录损坏")
+            val flags = u16(header, 8)
+            val method = u16(header, 10)
+            val compressedSize = u32(header, 20)
+            val entrySize = u32(header, 24)
+            val nameLength = u16(header, 28)
+            val extraLength = u16(header, 30)
+            val next = cursor + 46 + nameLength + extraLength + u16(header, 32)
+            val entryOffset = u32(header, 42)
+            // 只允许 deflate 选项、数据描述符与 UTF-8 标志；拒绝分卷与符号链接。
+            if (
+                flags and 0x80e.inv() != 0 ||
+                (method != ZipEntry.STORED && method != ZipEntry.DEFLATED) ||
+                compressedSize == 0xffffffffL ||
+                entrySize == 0xffffffffL ||
+                (method == ZipEntry.STORED && compressedSize != entrySize) ||
+                entryOffset >= offset ||
+                u16(header, 34) != 0 ||
+                ((u32(header, 38) ushr 16) and 0xf000) == 0xa000L ||
+                next > size
+            ) {
+                invalid("不支持的条目")
+            }
+            val name = read(offset + cursor + 46, nameLength)
+            val path = checkEntryPath(decodeName(name))
+            // 目录和同名文件也不能互相覆盖。
+            val identity = if (path.endsWith('/')) path.dropLast(1) else path
+            if (!paths.add(identity) || (path.endsWith('/') && entrySize != 0L)) invalid("重复条目")
+            checkExtra(read(offset + cursor + 46 + nameLength, extraLength))
+            records += Record(path, name, flags, method, u32(header, 16), compressedSize, entrySize, entryOffset)
+            cursor = next
+        }
+        if (cursor != size) invalid("中央目录损坏")
+        records.sortBy { it.offset }
+        return Directory(records, offset)
+    }
+
+    /** 核对本地文件头（数据描述符条目的 CRC 与大小可为 0）与数据描述符，返回数据起点 */
+    private fun checkLocalHeader(record: Record, boundary: Long): Long {
+        if (record.offset + 30 > boundary) invalid("条目越界")
+        val header = read(record.offset, 30)
+        val nameLength = u16(header, 26)
+        val extraLength = u16(header, 28)
+        val start = record.offset + 30 + nameLength + extraLength
+        val end = start + record.compressedSize
+        if (
+            u32(header, 0) != 0x04034b50L ||
+            u16(header, 6) != record.flags ||
+            u16(header, 8) != record.method ||
+            nameLength != record.name.size ||
+            end > boundary
+        ) {
+            invalid("本地文件头与中央目录不一致")
+        }
+        val descriptor = record.flags and 8 != 0
+        for ((position, expected) in listOf(14 to record.crc, 18 to record.compressedSize, 22 to record.size)) {
+            val actual = u32(header, position)
+            if (actual != expected && (!descriptor || actual != 0L)) invalid("本地文件头与中央目录不一致")
+        }
+        val metadata = read(record.offset + 30, nameLength + extraLength)
+        if (!record.name.contentEquals(metadata.copyOfRange(0, nameLength))) invalid("本地文件头与中央目录不一致")
+        checkExtra(metadata.copyOfRange(nameLength, metadata.size))
+        if (descriptor) {
+            if (end + 12 > boundary) invalid("数据描述符缺失")
+            val bytes = read(end, minOf(16L, boundary - end).toInt())
+            val shift = if (u32(bytes, 0) == 0x08074b50L) 4 else 0
+            if (
+                shift + 12 > bytes.size ||
+                u32(bytes, shift) != record.crc ||
+                u32(bytes, shift + 4) != record.compressedSize ||
+                u32(bytes, shift + 8) != record.size
+            ) {
+                invalid("数据描述符与中央目录不一致")
+            }
+        }
+        return start
     }
 
     /** ZIP64、分卷与加密文件不属于导出格式，一律拒绝。 */
-    private fun checkExtra(extra: ByteArray?) {
-        if (extra == null) return
+    private fun checkExtra(extra: ByteArray) {
         var offset = 0
         while (offset < extra.size) {
-            if (offset + 4 > extra.size) invalid("扩展字段损坏")
-            val id = (extra[offset].toInt() and 0xff) or ((extra[offset + 1].toInt() and 0xff) shl 8)
-            if (id == 1) invalid("不支持 ZIP64")
-            val length = (extra[offset + 2].toInt() and 0xff) or ((extra[offset + 3].toInt() and 0xff) shl 8)
-            offset += 4 + length
+            if (offset + 4 > extra.size || u16(extra, offset) == 1) invalid("不支持的扩展字段")
+            offset += 4 + u16(extra, offset + 2)
             if (offset > extra.size) invalid("扩展字段损坏")
         }
     }
 
-    /** 读到文件末尾，在最后 64 KiB 中查找中央目录结束记录并核对条目数与偏移。 */
-    private fun finish() {
-        finished = true
-        val buffer = ByteArray(64 * 1024)
-        while (tail.read(buffer) >= 0) {
-            // 丢弃数据
-        }
-        val bytes = tail.tail()
-        val total = tail.total
-        var end = bytes.size - 22
-        while (end >= 0) {
-            if (u32(bytes, end) == 0x06054b50L && end + 22 + u16(bytes, end + 20) == bytes.size) break
-            end--
-        }
-        if (end < 0) invalid("缺少中央目录")
-        val count = u16(bytes, end + 10)
-        val size = u32(bytes, end + 12)
-        val offset = u32(bytes, end + 16)
-        val position = total - bytes.size + end
-        if (
-            u16(bytes, end + 4) != 0 ||
-            u16(bytes, end + 6) != 0 ||
-            u16(bytes, end + 8) != count ||
-            count == 0xffff ||
-            size == 0xffffffffL ||
-            offset == 0xffffffffL ||
-            offset + size != position ||
-            count != entriesSeen
-        ) {
-            invalid("中央目录与条目不一致")
-        }
-    }
-
-    private fun <T> wrap(block: () -> T): T =
+    private fun decodeName(bytes: ByteArray): String =
         try {
-            block()
-        } catch (error: ArchiveFormatException) {
-            throw error
-        } catch (error: java.util.zip.ZipException) {
-            throw ArchiveFormatException(error.message ?: "ZIP 损坏", error)
-        } catch (error: java.io.EOFException) {
-            throw ArchiveFormatException("ZIP 被截断", error)
-        } catch (error: IllegalArgumentException) {
-            // 文件名不是合法 UTF-8 等
-            throw ArchiveFormatException(error.message ?: "ZIP 损坏", error)
+            Charsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes))
+                .toString()
+        } catch (error: CharacterCodingException) {
+            throw ArchiveFormatException("非法条目名", error)
         }
+
+    private fun read(position: Long, size: Int): ByteArray = ByteArray(size).also { readFully(position, it, 0, size) }
+
+    private fun readFully(position: Long, b: ByteArray, off: Int, len: Int) {
+        if (position < 0 || len < 0 || position + len > length) invalid("ZIP 被截断")
+        raf.seek(position)
+        raf.readFully(b, off, len)
+    }
 
     override fun close() {
-        zip.close()
+        current = null
+        raf.close()
+        if (deleteOnClose) file.delete()
     }
 
-    private companion object {
-        fun u16(bytes: ByteArray, at: Int) = (bytes[at].toInt() and 0xff) or ((bytes[at + 1].toInt() and 0xff) shl 8)
+    companion object {
+        private const val READ_CHUNK = 256 * 1024
 
-        fun u32(bytes: ByteArray, at: Int): Long = u16(bytes, at).toLong() or (u16(bytes, at + 2).toLong() shl 16)
-    }
-}
+        private fun u16(bytes: ByteArray, at: Int) = (bytes[at].toInt() and 0xff) or ((bytes[at + 1].toInt() and 0xff) shl 8)
 
-/** 透传读取，并保留最后 22 + 0xffff 字节（中央目录结束记录的最大范围）与已读总字节数。 */
-private class TailCaptureInputStream(input: InputStream) : FilterInputStream(input) {
-    private val capacity = 22 + 0xffff
-    private val ring = ByteArray(capacity)
-    private var filled = 0
-    private var head = 0
-    var total = 0L
-        private set
+        private fun u32(bytes: ByteArray, at: Int): Long = u16(bytes, at).toLong() or (u16(bytes, at + 2).toLong() shl 16)
 
-    private fun capture(b: ByteArray, off: Int, len: Int) {
-        total += len
-        for (i in off until off + len) {
-            ring[head] = b[i]
-            head = (head + 1) % capacity
-            if (filled < capacity) filled++
+        /**
+         * 把输入流（SAF Uri 等）复制到 [dir] 下的临时文件后打开，关闭时删除副本。
+         * 读取 ZIP 需要随机访问中央目录，内容 URI 通常只能顺序读取。
+         */
+        fun spool(input: InputStream, dir: File): ArchiveZipReader {
+            if (!dir.isDirectory && !dir.mkdirs()) throw IOException("无法创建临时目录：$dir")
+            val file = File.createTempFile("import-", ".zip", dir)
+            try {
+                input.use { source -> file.outputStream().use { source.copyTo(it, 64 * 1024) } }
+                return ArchiveZipReader(file, deleteOnClose = true)
+            } catch (error: Throwable) {
+                file.delete()
+                throw error
+            }
         }
-    }
-
-    override fun read(): Int {
-        val value = super.read()
-        if (value >= 0) capture(byteArrayOf(value.toByte()), 0, 1)
-        return value
-    }
-
-    override fun read(b: ByteArray, off: Int, len: Int): Int {
-        val n = super.read(b, off, len)
-        if (n > 0) capture(b, off, n)
-        return n
-    }
-
-    override fun skip(n: Long): Long {
-        // 跳过的字节也要记录，改为读取。
-        val buffer = ByteArray(minOf(n, 8192L).toInt().coerceAtLeast(1))
-        var skipped = 0L
-        while (skipped < n) {
-            val r = read(buffer, 0, minOf(buffer.size.toLong(), n - skipped).toInt())
-            if (r < 0) break
-            skipped += r
-        }
-        return skipped
-    }
-
-    override fun markSupported() = false
-
-    fun tail(): ByteArray {
-        val out = ByteArray(filled)
-        val start = (head - filled + capacity) % capacity
-        for (i in 0 until filled) out[i] = ring[(start + i) % capacity]
-        return out
     }
 }
 

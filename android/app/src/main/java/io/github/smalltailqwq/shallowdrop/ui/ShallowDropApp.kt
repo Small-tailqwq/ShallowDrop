@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +24,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import io.github.smalltailqwq.shallowdrop.ui.chat.ChatScreen
+import io.github.smalltailqwq.shallowdrop.ui.components.LocalAttachmentFile
 import io.github.smalltailqwq.shallowdrop.ui.onboarding.OnboardingScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.LicenseScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.SettingsScreen
@@ -69,9 +71,11 @@ fun ShallowDropApp(deps: UiDependencies, onDarkThemeChange: (Boolean) -> Unit = 
     LaunchedEffect(dark) { onDarkThemeChange(dark) }
 
     ShallowDropTheme(darkTheme = dark) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            // 设置读完前不决定起始页面，避免已有 Key 时闪现引导页
-            if (loaded) AppNavHost(hasApiKey = settings.hasApiKey, deps = deps)
+        CompositionLocalProvider(LocalAttachmentFile provides deps.attachmentFile) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                // 设置读完前不决定起始页面，避免已有 Key 时闪现引导页
+                if (loaded) AppNavHost(hasApiKey = settings.hasApiKey, deps = deps)
+            }
         }
     }
 }

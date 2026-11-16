@@ -79,17 +79,24 @@ class VoiceConversationTest {
         override suspend fun deleteAll() = Unit
     }
 
-    /** 每次 listen 取下一段脚本；脚本用完后一直聆听（挂起） */
+    /** 每次聆听取下一段脚本；脚本用完后一直聆听（挂起）。插话监听使用 [bargeScripts]，默认一直挂起 */
     private class FakeInput : SpeechInput {
         var available = true
         val scripts = ArrayDeque<suspend kotlinx.coroutines.flow.FlowCollector<AsrEvent>.() -> Unit>()
+        val bargeScripts = ArrayDeque<suspend kotlinx.coroutines.flow.FlowCollector<AsrEvent>.() -> Unit>()
         var listens = 0
+        var bargeListens = 0
+        var releases = 0
 
         override fun isAvailable() = available
 
-        override fun listen(languageTag: String): Flow<AsrEvent> = flow {
-            listens++
-            val script = scripts.removeFirstOrNull() ?: awaitCancellation()
+        override fun release() {
+            releases++
+        }
+
+        override fun listen(languageTag: String, bargeIn: Boolean): Flow<AsrEvent> = flow {
+            if (bargeIn) bargeListens++ else listens++
+            val script = (if (bargeIn) bargeScripts else scripts).removeFirstOrNull() ?: awaitCancellation()
             script()
         }
     }
@@ -185,6 +192,59 @@ class VoiceConversationTest {
     }
 
     @Test
+    fun speakingUpInterruptsAndBecomesNextQuestion() = voiceTest { voice ->
+        say(final = "讲个长故事")
+        output.idle.value = false
+        // 插话分两步：先开口（打断），说完后才有识别结果
+        val speak = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val finish = kotlinx.coroutines.CompletableDeferred<Unit>()
+        input.bargeScripts += {
+            speak.await()
+            emit(AsrEvent.SpeechStarted)
+            finish.await()
+            emit(AsrEvent.Recognizing)
+            emit(AsrEvent.Final("停一下，换个话题"))
+        }
+        voice.start()
+        advanceUntilIdle()
+        chat.emit("从前有座山。山里有座庙。", ReplyStatus.Streaming)
+        advanceUntilIdle()
+        assertEquals(VoicePhase.Speaking, voice.state.value.phase)
+        assertEquals(1, input.bargeListens)
+        val spokenBefore = output.spoken.toList()
+
+        speak.complete(Unit)
+        advanceUntilIdle()
+        // 开口即停止生成与朗读，回到聆听这句话
+        assertEquals(listOf("s1"), chat.stopped)
+        assertTrue(output.stops >= 1)
+        assertEquals(VoicePhase.Listening, voice.state.value.phase)
+        // 打断后迟到的流式文字不再入队朗读
+        chat.emit("从前有座山。山里有座庙。庙里有个老和尚。", ReplyStatus.Streaming)
+        advanceUntilIdle()
+        assertEquals(spokenBefore, output.spoken)
+
+        finish.complete(Unit)
+        advanceUntilIdle()
+        // 插话内容直接作为下一轮提问，不再单独聆听
+        assertEquals(listOf("讲个长故事", "停一下，换个话题"), chat.sent.map { it.first })
+        assertEquals(1, input.listens)
+        assertEquals("停一下，换个话题", voice.state.value.heard)
+    }
+
+    @Test
+    fun mutedReplyDoesNotListenForBargeIn() = voiceTest { voice ->
+        say(final = "你好")
+        voice.start()
+        advanceUntilIdle()
+        voice.setMuted(true)
+        chat.emit("你好！", ReplyStatus.Done)
+        advanceUntilIdle()
+        assertEquals(1, input.bargeListens)
+        assertEquals(VoicePhase.Muted, voice.state.value.phase)
+    }
+
+    @Test
     fun silenceKeepsListeningWithoutSending() = voiceTest { voice ->
         input.scripts += { throw AsrException(AsrError.NoSpeech) }
         input.scripts += { emit(AsrEvent.Final("   ")) }
@@ -220,6 +280,7 @@ class VoiceConversationTest {
         advanceUntilIdle()
         assertEquals(VoicePhase.Stopped, voice.state.value.phase)
         assertEquals(VoiceProblem.Network, voice.state.value.problem)
+        assertEquals(1, input.releases)
 
         voice.interrupt()
         advanceUntilIdle()

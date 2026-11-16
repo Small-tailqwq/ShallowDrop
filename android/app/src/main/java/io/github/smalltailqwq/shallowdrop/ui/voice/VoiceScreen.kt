@@ -268,4 +268,5 @@ private fun problemText(problem: VoiceProblem): String = when (problem) {
     VoiceProblem.Permission -> stringResource(R.string.voice_permission)
     VoiceProblem.Network -> stringResource(R.string.voice_network)
     VoiceProblem.ReplyFailed -> stringResource(R.string.voice_reply_failed)
+    VoiceProblem.ServiceRejected -> stringResource(R.string.voice_service_rejected)
 }

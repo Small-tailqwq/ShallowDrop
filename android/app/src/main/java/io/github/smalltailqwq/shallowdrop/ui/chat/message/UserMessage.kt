@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.contract.TurnView
 import io.github.smalltailqwq.shallowdrop.core.model.Message
+import io.github.smalltailqwq.shallowdrop.ui.components.AttachmentThumbnail
 import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
 import io.github.smalltailqwq.shallowdrop.ui.theme.LocalExtraColors
 
@@ -64,7 +65,15 @@ fun UserMessage(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.padding(bottom = 8.dp),
             ) {
-                message.files.forEach { FileChip(it) }
+                // 对照 MessageFile.tsx：纯图片 120dp 缩略图，与文件混排时 64dp
+                val thumbSize = if (message.files.all { it.isImage }) 120.dp else 64.dp
+                message.files.forEach { file ->
+                    if (file.isImage) {
+                        AttachmentThumbnail(file, thumbSize) { FileChip(file) }
+                    } else {
+                        FileChip(file)
+                    }
+                }
             }
         }
         if (editing) {

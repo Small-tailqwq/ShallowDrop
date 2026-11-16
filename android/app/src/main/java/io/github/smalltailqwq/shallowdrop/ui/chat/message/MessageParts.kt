@@ -85,7 +85,7 @@ fun formatSize(bytes: Long): String = when {
     else -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
 }
 
-/** 消息中的附件卡片（图片与文件共用；本地原件预览待接入 AttachmentStore） */
+/** 消息中的附件卡片：文件，以及没有本地原件的图片（有原件的图片见 AttachmentThumbnail） */
 @Composable
 fun FileChip(file: FileAttachment, modifier: Modifier = Modifier) {
     Surface(

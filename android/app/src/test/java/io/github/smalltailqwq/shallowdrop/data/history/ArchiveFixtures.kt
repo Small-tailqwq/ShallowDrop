@@ -173,6 +173,58 @@ object Fx {
         return out.toByteArray()
     }
 
+    /**
+     * 按官方导出的写法手工组装 ZIP：每个条目都带数据描述符（flag 8），本地文件头的 CRC 与大小写 0，
+     * 真实值只在数据描述符与中央目录中；JSON 用 DEFLATE，ByteArray（图片）用 STORE。
+     * [tamper] 返回 true 的条目，数据描述符里的 CRC 会被改错。
+     */
+    fun descriptorZip(vararg entries: Pair<String, Any>, tamper: (String) -> Boolean = { false }): ByteArray {
+        val out = ByteArrayOutputStream()
+        val central = ByteArrayOutputStream()
+        fun le16(o: ByteArrayOutputStream, v: Int) = o.write(byteArrayOf(v.toByte(), (v shr 8).toByte()))
+        fun le32(o: ByteArrayOutputStream, v: Long) = o.write(
+            byteArrayOf(v.toByte(), (v shr 8).toByte(), (v shr 16).toByte(), (v shr 24).toByte()),
+        )
+        for ((name, value) in entries) {
+            val (data, stored) = when (value) {
+                is JsonElement -> value.toString().toByteArray() to false
+                is String -> value.toByteArray() to false
+                is ByteArray -> value to true
+                else -> error("unsupported $value")
+            }
+            val payload = if (stored) data else {
+                val deflater = java.util.zip.Deflater(java.util.zip.Deflater.DEFAULT_COMPRESSION, true)
+                deflater.setInput(data)
+                deflater.finish()
+                val buffer = ByteArrayOutputStream()
+                val chunk = ByteArray(4096)
+                while (!deflater.finished()) buffer.write(chunk, 0, deflater.deflate(chunk))
+                deflater.end()
+                buffer.toByteArray()
+            }
+            val crc = CRC32().apply { update(data) }.value
+            val method = if (stored) 0 else 8
+            val nameBytes = name.toByteArray(Charsets.UTF_8)
+            val offset = out.size().toLong()
+            le32(out, 0x04034b50); le16(out, 20); le16(out, 8); le16(out, method); le16(out, 0); le16(out, 0x21)
+            le32(out, 0); le32(out, 0); le32(out, 0); le16(out, nameBytes.size); le16(out, 0)
+            out.write(nameBytes)
+            out.write(payload)
+            le32(out, 0x08074b50); le32(out, if (tamper(name)) crc xor 1 else crc)
+            le32(out, payload.size.toLong()); le32(out, data.size.toLong())
+            le32(central, 0x02014b50); le16(central, 20); le16(central, 20); le16(central, 8); le16(central, method)
+            le16(central, 0); le16(central, 0x21); le32(central, crc); le32(central, payload.size.toLong())
+            le32(central, data.size.toLong()); le16(central, nameBytes.size); le16(central, 0); le16(central, 0)
+            le16(central, 0); le16(central, 0); le32(central, 0); le32(central, offset)
+            central.write(nameBytes)
+        }
+        val centralOffset = out.size().toLong()
+        out.write(central.toByteArray())
+        le32(out, 0x06054b50); le16(out, 0); le16(out, 0); le16(out, entries.size); le16(out, entries.size)
+        le32(out, central.size().toLong()); le32(out, centralOffset); le16(out, 0)
+        return out.toByteArray()
+    }
+
     val PNG = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4)
     val JPEG = byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xe0.toByte(), 5, 6)
 }

@@ -71,10 +71,18 @@ internal class ArchiveImporter(
 
     /**
      * 检查 ZIP 格式、首个 manifest 条目及格式版本，返回已越过 manifest 的读取器。
-     * 只读取，不触碰暂存与正式数据。
+     * 只读取，不触碰暂存与正式数据。输入流先复制为临时文件（关闭读取器时删除）。
      */
     fun open(input: InputStream): ArchiveZipReader {
-        val reader = ArchiveZipReader(input)
+        // 清理上次中断遗留的临时副本
+        paths.importTempDir.listFiles()?.forEach { it.delete() }
+        return check(ArchiveZipReader.spool(input, paths.importTempDir))
+    }
+
+    /** 与 [open] 相同，直接读取本地文件（如链接下载的缓存），不另做副本 */
+    fun open(file: File): ArchiveZipReader = check(ArchiveZipReader(file))
+
+    private fun check(reader: ArchiveZipReader): ArchiveZipReader {
         try {
             if (!reader.isZip) fail(HistoryErrorCodes.UNRECOGNIZED)
             val first = reader.next() ?: fail(HistoryErrorCodes.UNRECOGNIZED)

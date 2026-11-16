@@ -67,7 +67,7 @@ Gradle 工程、版本目录（预先登记所有预计依赖）、`core/model`�
 
 - Room：`sessions`、`messages`（blocks 以 JSON 列存）、`files`；附件原件落盘
 - `SessionStore` 实现：列表 Flow、按会话加载、增量写消息、删除、全部删除
-- 导入：SAF Uri → 流式读取 ZIP（STORE / DEFLATE），首条目 manifest 版本校验，逐会话转换写入暂存表，校验通过后单事务替换；失败保留原数据
+- 导入：SAF Uri 先复制为私有临时文件（官方导出链接的下载直接使用缓存文件）→ 照 zipReader.ts 读中央目录、逐条核对本地头与数据描述符（官方导出的图片为「STORE + 数据描述符」，必须随机访问），首条目 manifest 版本校验，逐会话转换写入暂存表，校验通过后单事务替换；失败保留原数据
 - 导出：生成同格式 ZIP 写入用户选择的 Uri
 - 移植 `schema.ts` 校验与 `toLocal.ts` / `toArchive.ts` 映射规则（状态映射、片段丢弃、prefix=false 等）
 - 单测：用合成归档覆盖消息树、分支、图片、坏数据

@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -78,6 +79,7 @@ import io.github.smalltailqwq.shallowdrop.core.contract.ImageRestoreState
 import io.github.smalltailqwq.shallowdrop.core.model.AppLocale
 import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
 import io.github.smalltailqwq.shallowdrop.core.model.ThemePreference
+import io.github.smalltailqwq.shallowdrop.core.model.TtsVoice
 import io.github.smalltailqwq.shallowdrop.ui.common.ApiKeyField
 import io.github.smalltailqwq.shallowdrop.ui.common.ConfirmDialog
 import io.github.smalltailqwq.shallowdrop.ui.common.GetApiKeyButton
@@ -91,7 +93,7 @@ import java.time.LocalDate
 /** TODO 发布前确认开源仓库地址 */
 const val SOURCE_CODE_URL = "https://github.com/Small-tailqwq/ShallowDrop"
 
-private enum class SettingsDialog { ApiKey, Language, Theme, Model, ImportSource, ImportConfirm, DeleteAll }
+private enum class SettingsDialog { ApiKey, Language, Theme, Model, Voice, ImportSource, ImportConfirm, DeleteAll }
 
 /** 设置页：通用（API Key、语言、主题、模型）、数据管理（导入 / 导出 / 删除全部）、关于。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -174,6 +176,9 @@ fun SettingsScreen(
                     SettingRow(rememberVectorPainter(Icons.Outlined.SmartToy), stringResource(R.string.model), settings.model.id) {
                         dialog = SettingsDialog.Model
                     }
+                    SettingRow(rememberVectorPainter(Icons.Outlined.RecordVoiceOver), stringResource(R.string.tts_voice), voiceLabel(settings.ttsVoice)) {
+                        dialog = SettingsDialog.Voice
+                    }
                 }
                 Section(stringResource(R.string.data)) {
                     val importing = task as? DataTask.Importing
@@ -185,7 +190,7 @@ fun SettingsScreen(
                         enabled = !busy,
                     ) {
                         // 官方 App「复制下载链接」后回到这里，剪贴板里有链接就直接填上
-                        linkText = readClipboardText(context)?.let(viewModel::parseLink).orEmpty()
+                        linkText = readClipboardText(context)?.let(viewModel::clipboardLink).orEmpty()
                         dialog = SettingsDialog.ImportSource
                     }
                     val progressModifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
@@ -279,6 +284,17 @@ fun SettingsScreen(
             onSelect = {
                 dialog = null
                 viewModel.setModel(it)
+            },
+            onDismiss = { dialog = null },
+        )
+        SettingsDialog.Voice -> ChoiceDialog(
+            title = stringResource(R.string.tts_voice),
+            options = TtsVoice.entries,
+            selected = settings.ttsVoice,
+            label = { voiceLabel(it) },
+            onSelect = {
+                dialog = null
+                viewModel.setTtsVoice(it)
             },
             onDismiss = { dialog = null },
         )
@@ -378,6 +394,12 @@ private fun readClipboardText(context: Context): String? {
     val clip = runCatching { clipboard.primaryClip }.getOrNull() ?: return null
     if (clip.itemCount == 0) return null
     return clip.getItemAt(0).coerceToText(context)?.toString()
+}
+
+@Composable
+private fun voiceLabel(voice: TtsVoice) = when (voice) {
+    TtsVoice.Stella -> stringResource(R.string.tts_voice_stella)
+    TtsVoice.Tide -> stringResource(R.string.tts_voice_tide)
 }
 
 @Composable
