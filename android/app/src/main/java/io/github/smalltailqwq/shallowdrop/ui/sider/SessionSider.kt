@@ -20,12 +20,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardOptions
 import io.github.smalltailqwq.shallowdrop.ui.motion.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import io.github.smalltailqwq.shallowdrop.ui.motion.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -43,14 +40,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -77,22 +70,21 @@ fun SessionSider(
     onRename: (String, String) -> Unit,
     onDelete: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenSearch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var renaming by remember { mutableStateOf<SessionSummary?>(null) }
     var deleting by remember { mutableStateOf<SessionSummary?>(null) }
 
-    var query by rememberSaveable { mutableStateOf("") }
-    val untitled = stringResource(R.string.untitled_chat)
-    val visible = remember(groups, query, untitled) { filterSessionGroups(groups.orEmpty(), query, untitled) }
+    val visible = groups.orEmpty()
 
     Column(modifier.fillMaxSize()) {
-        SearchField(query, onQueryChange = { query = it },
+        SearchEntry(onOpenSearch,
             modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 4.dp))
         if (groups != null && visible.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text(
-                    stringResource(if (query.isBlank()) R.string.sider_empty else R.string.sider_no_match),
+                    stringResource(R.string.sider_empty),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -146,44 +138,23 @@ fun SessionSider(
     }
 }
 
-/** 按标题搜索会话的输入框：胶囊形，带清除按钮。 */
+/** 搜索入口：外观同搜索框，点按进入独立搜索页。 */
 @Composable
-private fun SearchField(query: String, onQueryChange: (String) -> Unit, modifier: Modifier = Modifier) {
-    val placeholder = stringResource(R.string.sider_search)
-    BasicTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        singleLine = true,
-        textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        modifier = modifier.semantics { contentDescription = placeholder },
-        decorationBox = { inner ->
-            Row(
-                Modifier
-                    .heightIn(min = 44.dp)
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(50))
-                    .padding(start = 14.dp, end = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                DsIcon(R.drawable.ic_search_outline_16, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.width(10.dp))
-                Box(Modifier.weight(1f)) {
-                    if (query.isEmpty()) {
-                        Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    inner()
-                }
-                if (query.isNotEmpty()) {
-                    IconButton(onClick = { onQueryChange("") }, modifier = Modifier.size(36.dp)) {
-                        DsIcon(R.drawable.ic_close_fill_14, contentDescription = stringResource(R.string.clear), modifier = Modifier.size(16.dp))
-                    }
-                } else {
-                    Spacer(Modifier.width(10.dp))
-                }
-            }
-        },
-    )
+private fun SearchEntry(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val label = stringResource(R.string.sider_search)
+    Row(
+        modifier
+            .heightIn(min = 44.dp)
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .pressClickable(onClick = onClick)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        DsIcon(R.drawable.ic_search_outline_16, contentDescription = null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(10.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 /** 侧栏底部：圆形图标 + “设置” */

@@ -27,6 +27,13 @@ interface ChatDao {
     @Query("SELECT * FROM messages WHERE sessionId = :sessionId AND id = :id")
     suspend fun message(sessionId: String, id: String): MessageEntity?
 
+    @Query("SELECT * FROM messages ORDER BY createdAt DESC")
+    suspend fun allMessages(): List<MessageEntity>
+
+    /** pattern 为已转义的 LIKE 模式（转义符 \），仅作粗筛，精确匹配在 Kotlin 侧 */
+    @Query("SELECT * FROM messages WHERE json LIKE :pattern ESCAPE '\\' ORDER BY createdAt DESC")
+    suspend fun messagesLike(pattern: String): List<MessageEntity>
+
     @Query("SELECT MAX(seq) FROM messages WHERE sessionId = :sessionId")
     suspend fun maxSeq(sessionId: String): Int?
 

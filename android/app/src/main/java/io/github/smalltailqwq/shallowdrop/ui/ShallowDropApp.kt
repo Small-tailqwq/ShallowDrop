@@ -30,6 +30,7 @@ import io.github.smalltailqwq.shallowdrop.ui.components.LocalAttachmentFile
 import io.github.smalltailqwq.shallowdrop.ui.onboarding.OnboardingScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.FontSizeScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.LicenseScreen
+import io.github.smalltailqwq.shallowdrop.ui.sider.SearchScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.ReplySwipeScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.SettingsViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -44,6 +45,7 @@ import kotlinx.serialization.Serializable
  * 导航（类型安全路由）：
  *   OnboardingRoute —— 首次无 Key 时的引导页
  *   ChatRoute       —— 对话页（会话切换在页内完成，不进返回栈）
+ *   SearchRoute     —— 搜索会话（标题、消息、文件名），选中后回到对话页并打开
  *   VoiceRoute      —— 语音对话，挂断后回到对话页并打开写入的会话
  *   SettingsGraph   —— SettingsRoute、LicenseRoute、RechargeRoute、FontSizeRoute、ReplySwipeRoute
  */
@@ -53,6 +55,10 @@ data object OnboardingRoute
 
 @Serializable
 data object ChatRoute
+
+/** 独立搜索页：选中会话后回到对话页并打开它 */
+@Serializable
+data object SearchRoute
 
 @Serializable
 data object SettingsGraph
@@ -108,7 +114,7 @@ private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
         }
     }
 
-    // 语音对话写入的会话，回到对话页时打开
+    // 语音对话写入的会话、搜索选中的会话，回到对话页时打开
     var voiceSession by rememberSaveable { mutableStateOf<String?>(null) }
 
     // 外部打开或分享进来的 ZIP：转到设置页由其确认导入
@@ -142,8 +148,18 @@ private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
             ChatScreen(
                 onOpenSettings = { navController.navigate(SettingsGraph) { launchSingleTop = true } },
                 onOpenVoice = { navController.navigate(VoiceRoute(it)) { launchSingleTop = true } },
+                onOpenSearch = { navController.navigate(SearchRoute) { launchSingleTop = true } },
                 openSession = voiceSession,
                 onOpenSessionHandled = { voiceSession = null },
+            )
+        }
+        composable<SearchRoute> {
+            SearchScreen(
+                onBack = { navController.popBackStack() },
+                onSelect = { sessionId ->
+                    voiceSession = sessionId
+                    navController.popBackStack()
+                },
             )
         }
         composable<VoiceRoute> {

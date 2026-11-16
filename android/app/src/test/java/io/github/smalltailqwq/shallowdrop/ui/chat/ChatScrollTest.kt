@@ -5,7 +5,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.compose.material3.Surface
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
-import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -34,6 +33,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -94,11 +94,11 @@ class ChatScrollTest {
                 blocks = listOf(ReplyBlock.Text(if (i == 19) text else "合成内容。".repeat(50)))), 0, 1)
         ) }, generating)
 
-    private fun show(repo: Repo): ChatViewModel {
+    private fun show(repo: Repo, onOpenSearch: () -> Unit = {}): ChatViewModel {
         repo.list.tryEmit(listOf(SessionSummary("preview", "preview", 0, 0), SessionSummary("other", "other", 0, 0)))
         val vm = ChatViewModel(repo, Settings(), SavedStateHandle(mapOf("sessionId" to "preview")))
         val sessions = SessionListViewModel(repo)
-        compose.setContent { ShallowDropTheme { Surface { ChatScreen({}, vm, sessions) } } }
+        compose.setContent { ShallowDropTheme { Surface { ChatScreen({}, vm, sessions, onOpenSearch = onOpenSearch) } } }
         compose.waitForIdle()
         return vm
     }
@@ -108,14 +108,14 @@ class ChatScrollTest {
         compose.onNodeWithText(text, substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("回到底部").assertDoesNotExist()
     }
-    @Test fun selectingSessionClearsDrawerSearchFocus() {
-        show(Repo(conversation()))
+    @Test fun searchEntryOpensSearchPageAndClosesDrawer() {
+        var opened = 0
+        show(Repo(conversation()), onOpenSearch = { opened++ })
         compose.onNodeWithContentDescription("打开边栏").performClick()
-        compose.onNodeWithContentDescription("搜索对话").performClick()
-        compose.onNodeWithText("other").performClick()
+        compose.onNodeWithText("搜索对话").performClick()
         compose.waitForIdle()
-        compose.onNodeWithContentDescription("打开边栏").performClick()
-        compose.onNodeWithContentDescription("搜索对话").assertIsNotFocused()
+        assertEquals(1, opened)
+        compose.onNodeWithText("搜索对话").assertIsNotDisplayed()
     }
     @Test fun firstLayoutOpensAtBottom() {
         show(Repo(conversation()))

@@ -2,13 +2,16 @@ package io.github.smalltailqwq.shallowdrop.data.db
 
 import androidx.room.withTransaction
 import io.github.smalltailqwq.shallowdrop.core.contract.SessionStore
+import io.github.smalltailqwq.shallowdrop.core.contract.MessageMatch
 import io.github.smalltailqwq.shallowdrop.core.model.Message
+import io.github.smalltailqwq.shallowdrop.core.model.ReplyBlock
 import io.github.smalltailqwq.shallowdrop.core.model.Session
 import io.github.smalltailqwq.shallowdrop.core.model.SessionSummary
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /**
@@ -64,6 +67,18 @@ class RoomSessionStore(
         withContext(io) { orphaned.forEach { paths.file(it).delete() } }
     }
 
+    override suspend fun searchMessages(query: String): List<MessageMatch> {
+        val needle = query.trim()
+        if (needle.isEmpty()) return emptyList()
+        return withContext(io) {
+            val rows = if (canPrefilter(needle)) dao.messagesLike("%${likePattern(needle)}%") else dao.allMessages()
+            rows.flatMap { row ->
+                ensureActive() // 逐条解码，取消后不再继续
+                matchesOf(row.sessionId, DbJson.decode(row.json), needle)
+            }
+        }
+    }
+
     override suspend fun deleteAll() {
         db.historyLock.withLock {
             dao.clearAll()
@@ -75,6 +90,41 @@ class RoomSessionStore(
                 paths.dir.deleteRecursively()
                 paths.dir.mkdirs()
             }
+        }
+    }
+
+    private fun matchesOf(sessionId: String, message: Message, needle: String): List<MessageMatch> = when (message) {
+        is Message.User -> buildList {
+            if (message.content.contains(needle, ignoreCase = true)) {
+                add(MessageMatch(sessionId, message.id, message.createdAt, true, message.content))
+            }
+            message.files.filter { it.name.contains(needle, ignoreCase = true) }.forEach {
+                add(MessageMatch(sessionId, message.id, message.createdAt, true, it.name, isFileName = true))
+            }
+        }
+        is Message.Assistant -> {
+            val text = message.blocks.filterIsInstance<ReplyBlock.Text>().filter { !it.isTemplate }.joinToString("\n") { it.text }
+            if (text.contains(needle, ignoreCase = true)) {
+                listOf(MessageMatch(sessionId, message.id, message.createdAt, false, text))
+            } else {
+                emptyList()
+            }
+        }
+    }
+
+    /** JSON 会转义引号、反斜杠和控制字符，大小写折叠也不止 ASCII；这些情况放弃 LIKE 粗筛，全量扫描。 */
+    private fun canPrefilter(needle: String) =
+        needle.none { it == '"' || it == '\\' || it < ' ' || (it.code > 127 && it.lowercaseChar() != it.uppercaseChar()) }
+
+    /**
+     * LIKE 粗筛模式：% _ \ 按字面转义。Kotlin 的 ignoreCase 会把 K(开尔文符号)、ſ、ı、İ 视同 k、s、i，
+     * 而 SQLite LIKE 只折叠 ASCII，所以 i/k/s 用 `_` 放宽为任意单字符，保证粗筛只多不漏。
+     */
+    private fun likePattern(text: String) = buildString {
+        for (c in text) when (c) {
+            '\\', '%', '_' -> append('\\').append(c)
+            'i', 'I', 'k', 'K', 's', 'S' -> append('_')
+            else -> append(c)
         }
     }
 

@@ -10,6 +10,11 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import io.github.smalltailqwq.shallowdrop.core.contract.MessageMatch
 import io.github.smalltailqwq.shallowdrop.core.contract.TurnView
 import io.github.smalltailqwq.shallowdrop.core.model.Message
 import io.github.smalltailqwq.shallowdrop.core.model.ReplyBlock
@@ -21,7 +26,11 @@ import io.github.smalltailqwq.shallowdrop.ui.chat.message.AssistantMessage
 import io.github.smalltailqwq.shallowdrop.ui.sider.SessionGroup
 import io.github.smalltailqwq.shallowdrop.ui.sider.SessionGroupKey
 import io.github.smalltailqwq.shallowdrop.ui.sider.SessionSider
-import io.github.smalltailqwq.shallowdrop.ui.sider.filterSessionGroups
+import io.github.smalltailqwq.shallowdrop.ui.sider.SearchContent
+import io.github.smalltailqwq.shallowdrop.ui.sider.SearchResult
+import io.github.smalltailqwq.shallowdrop.ui.sider.SearchSnippet
+import io.github.smalltailqwq.shallowdrop.ui.sider.buildSearchResults
+import io.github.smalltailqwq.shallowdrop.ui.sider.snippetAround
 import io.github.smalltailqwq.shallowdrop.ui.theme.ShallowDropTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -32,7 +41,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** 侧栏按标题搜索，以及回复出错时卡片内的重试入口（Robolectric 合成界面，非设备）。 */
+/** 搜索页（标题 / 消息 / 文件名命中）与侧栏入口，以及回复出错时卡片内的重试入口（Robolectric 合成界面，非设备）。 */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [36], qualifiers = "zh-rCN-w360dp-h800dp-xxhdpi")
@@ -47,43 +56,87 @@ class SiderSearchAndErrorCardTest {
         SessionGroup(SessionGroupKey.Yesterday, listOf(summary("c", "东京五日游行程"), summary("d", ""))),
     )
 
+    private fun match(session: String, message: String, text: String, at: Long = 0, user: Boolean = true, file: Boolean = false) =
+        MessageMatch(session, message, at, user, text, file)
+
+    private val sessions = groups.flatMap { it.sessions }
+
     @Test
-    fun filterKeepsGroupsAndIgnoresCase() {
-        assertEquals(groups, filterSessionGroups(groups, "  ", "新对话"))
-        val kotlin = filterSessionGroups(groups, " kotlin ", "新对话")
-        assertEquals(listOf(SessionGroupKey.Today), kotlin.map { it.key })
-        assertEquals(listOf("b"), kotlin.single().sessions.map { it.id })
-        assertEquals(listOf("c"), filterSessionGroups(groups, "行程", "新对话").flatMap { it.sessions }.map { it.id })
-        assertEquals(listOf("d"), filterSessionGroups(groups, "新对话", "新对话").flatMap { it.sessions }.map { it.id })
-        assertEquals(listOf("d"), filterSessionGroups(groups, "new chat", "New chat").flatMap { it.sessions }.map { it.id })
-        assertEquals(emptyList<SessionGroup>(), filterSessionGroups(groups, "不存在", "新对话"))
+    fun resultsMergeTitleMessageAndFileNameHits() {
+        val long = "前文".repeat(30) + "协程取消" + "后文".repeat(60)
+        // 命中由存储层按查询词筛好，这里按查询词分别给出
+        val kotlinHits = listOf(
+            match("a", "m1", "我想看 Kotlin 书单", 1),
+            match("a", "m1", "kotlin-notes.pdf", 1, file = true),
+            match("zzz", "m3", "已删除会话的 kotlin 消息"),
+        )
+        val results = buildSearchResults(sessions, kotlinHits, " kotlin ", "新对话")
+        // b 仅标题命中，a 仅消息命中；已不在列表中的会话被丢弃；顺序沿用会话列表
+        assertEquals(listOf("a", "b"), results.map { it.session.id })
+        assertEquals(1, results[0].snippets.size) // 同一条消息只取一个片段，正文优先
+        assertEquals(false, results[0].snippets[0].isFileName)
+        assertEquals(emptyList<SearchSnippet>(), results[1].snippets)
+
+        val deep = buildSearchResults(sessions, listOf(match("c", "m2", long, 2, user = false)), "协程取消", "新对话")
+        assertEquals(listOf("b", "c"), deep.map { it.session.id })
+        val snippet = deep[1].snippets.single()
+        assertTrue(snippet.text.startsWith("…") && snippet.text.endsWith("…") && "协程取消" in snippet.text)
+        assertEquals(false, snippet.fromUser)
+        assertEquals(emptyList<SearchResult>(), buildSearchResults(sessions, kotlinHits, "  ", "新对话"))
+        assertEquals(listOf("d"), buildSearchResults(sessions, emptyList(), "新对话", "新对话").map { it.session.id })
     }
 
-    private fun setSider(list: List<SessionGroup>, onSelect: (String) -> Unit = {}) = compose.setContent {
+    @Test
+    fun fileNameOnlyHitKeepsFileFlag() {
+        val results = buildSearchResults(sessions, listOf(match("c", "m", "报告.PDF", file = true)), "pdf", "新对话")
+        assertEquals(listOf(SearchSnippet("报告.PDF", true, true)), results.single().snippets)
+    }
+
+    @Test
+    fun snippetFlattensLineBreaks() {
+        assertEquals("第一行 第二行 关键词", snippetAround("第一行\n第二行\n关键词", "关键词"))
+    }
+
+    private fun setSearch(results: List<SearchResult>?, highlight: String = "kotlin", onSelect: (String) -> Unit = {}) = compose.setContent {
         ShallowDropTheme(darkTheme = false) {
-            Surface { SessionSider(list, "a", onSelect, { _, _ -> }, {}, {}) }
+            var query by remember { mutableStateOf("") }
+            Surface { SearchContent(query, { query = it }, results, highlight, "新对话", {}, onSelect) }
         }
     }
 
     @Test
-    fun searchFiltersSessionsAndShowsNoMatch() {
+    fun searchPageShowsHitsAndOpensSession() {
         var opened: String? = null
-        setSider(groups) { opened = it }
-        compose.onNodeWithText("东京五日游行程").assertIsDisplayed()
-
-        compose.onNodeWithContentDescription("搜索对话").performTextInput("kotlin")
+        setSearch(listOf(SearchResult(summary("b", "Kotlin 协程取消"), listOf(SearchSnippet("…读 kotlin 文档", true, false)))), onSelect = { opened = it })
         compose.onNodeWithText("Kotlin 协程取消").assertIsDisplayed()
-        compose.onAllNodesWithText("东京五日游行程").assertCountEquals(0)
-        compose.onAllNodesWithText("昨天").assertCountEquals(0)
+        compose.onNodeWithText("…读 kotlin 文档").assertIsDisplayed()
         compose.onNodeWithText("Kotlin 协程取消").performClick()
         assertEquals("b", opened)
+    }
 
-        compose.onNodeWithContentDescription("搜索对话").performTextInput("zzz")
+    @Test
+    fun searchPageShowsNoMatchOnlyForEmptyResults() {
+        setSearch(emptyList())
         compose.onNodeWithText("没有匹配的对话").assertIsDisplayed()
-
+        compose.onNodeWithContentDescription("搜索对话").performTextInput("x")
         compose.onNodeWithContentDescription("清除").performClick()
+    }
+
+    @Test
+    fun siderSearchEntryOpensSearchPage() {
+        var opened = 0
+        compose.setContent { ShallowDropTheme(darkTheme = false) {
+            Surface { SessionSider(groups, "a", {}, { _, _ -> }, {}, {}, { opened++ }) }
+        } }
         compose.onNodeWithText("东京五日游行程").assertIsDisplayed()
-        compose.onAllNodesWithText("没有匹配的对话").assertCountEquals(0)
+        compose.onNodeWithText("搜索对话").performClick()
+        assertEquals(1, opened)
+    }
+
+    private fun setSider(list: List<SessionGroup>) = compose.setContent {
+        ShallowDropTheme(darkTheme = false) {
+            Surface { SessionSider(list, "a", {}, { _, _ -> }, {}, {}, {}) }
+        }
     }
 
     @Test

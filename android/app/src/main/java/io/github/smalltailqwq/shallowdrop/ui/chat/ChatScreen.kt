@@ -110,6 +110,7 @@ fun ChatScreen(
     /** 语音对话结束后要打开的会话；打开后调用 onOpenSessionHandled */
     openSession: String? = null,
     onOpenSessionHandled: () -> Unit = {},
+    onOpenSearch: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val groups by sessionList.groups.collectAsStateWithLifecycle()
@@ -141,6 +142,10 @@ fun ChatScreen(
                 onSelect = {
                     viewModel.openSession(it)
                     closeDrawer()
+                },
+                onOpenSearch = {
+                    closeDrawer()
+                    onOpenSearch()
                 },
                 onRename = sessionList::rename,
                 onDelete = sessionList::delete,

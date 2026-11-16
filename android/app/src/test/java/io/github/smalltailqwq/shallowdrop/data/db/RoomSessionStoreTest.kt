@@ -79,6 +79,40 @@ class RoomSessionStoreTest {
     }
 
     @Test
+    fun searchMessagesFindsTextReplyAndFileNameOnly() = runTest {
+        val report = FileAttachment(id = "f1", name = "Quarterly_Report.pdf", size = 1, isImage = false)
+        store.save(session("s1", 100, listOf(report)))
+        store.save(session("s2", 200))
+
+        // 回复正文（忽略大小写）、提问；思考块与引用不参与
+        assertEquals(listOf("s1" to "a1", "s2" to "a1"), store.searchMessages("答").map { it.sessionId to it.messageId }.sortedBy { it.first })
+        assertTrue(store.searchMessages("想").isEmpty())
+        assertEquals(2, store.searchMessages("你好").size)
+
+        // 文件名：通配符按字面匹配
+        val file = store.searchMessages("quarterly_report").single()
+        assertEquals(Triple("s1", "u1", true), Triple(file.sessionId, file.messageId, file.isFileName))
+        assertEquals("Quarterly_Report.pdf", file.text)
+        assertTrue(store.searchMessages("quarterly%report").isEmpty())
+        assertTrue(store.searchMessages("  ").isEmpty())
+    }
+
+    @Test
+    fun asciiQueryFindsNonAsciiCaseFoldedCharacters() = runTest {
+        // Kotlin ignoreCase 把 K(开尔文符号)、ſ、ı、İ 分别视同 k、s、i、i；SQLite LIKE 只折叠 ASCII，粗筛不能漏掉它们
+        val texts = mapOf("kelvin" to "K", "long-s" to "ſ", "dotless" to "ı", "dotted" to "İ")
+        texts.forEach { (id, char) ->
+            store.save(
+                Session(id, id, 1, 1, rootMessageId = "m", messages = listOf(Message.User("m", 1, content = "x${char}x"))),
+            )
+        }
+        assertEquals(setOf("kelvin"), store.searchMessages("xkx").map { it.sessionId }.toSet())
+        assertEquals(setOf("long-s"), store.searchMessages("xsx").map { it.sessionId }.toSet())
+        assertEquals(setOf("dotless", "dotted"), store.searchMessages("xix").map { it.sessionId }.toSet())
+        assertEquals(setOf("kelvin"), store.searchMessages("XKX").map { it.sessionId }.toSet())
+    }
+
+    @Test
     fun saveLoadAndSummaries() = runTest {
         store.save(session("s1", 100))
         store.save(session("s2", 200))

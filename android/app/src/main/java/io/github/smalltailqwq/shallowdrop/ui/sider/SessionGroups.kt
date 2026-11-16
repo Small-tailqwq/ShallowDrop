@@ -40,16 +40,6 @@ fun groupKeyOf(updatedAt: Long, now: Long, zone: ZoneId): SessionGroupKey {
     }
 }
 
-/** 按标题筛选会话（忽略大小写与首尾空白），保留分组与顺序；空查询返回原列表。 */
-fun filterSessionGroups(groups: List<SessionGroup>, query: String, untitled: String): List<SessionGroup> {
-    val needle = query.trim()
-    if (needle.isEmpty()) return groups
-    return groups.mapNotNull { group ->
-        val matched = group.sessions.filter { it.title.ifEmpty { untitled }.contains(needle, ignoreCase = true) }
-        if (matched.isEmpty()) null else group.copy(sessions = matched)
-    }
-}
-
 fun groupSessions(
     sessions: List<SessionSummary>,
     now: Long,

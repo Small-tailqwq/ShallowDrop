@@ -583,6 +583,8 @@ class ChatEngine(
         }
     }
 
+    override suspend fun searchMessages(query: String) = store.searchMessages(query)
+
     override suspend fun deleteAll() {
         opMutex.withLock {
             generations.values.toList().forEach { it.job.cancelAndJoin() }

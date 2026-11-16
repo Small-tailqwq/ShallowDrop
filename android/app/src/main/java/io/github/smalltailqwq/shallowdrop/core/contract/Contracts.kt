@@ -66,7 +66,21 @@ interface SessionStore {
 
     /** 删除全部会话与附件原件 */
     suspend fun deleteAll()
+
+    /** 含 [query]（忽略大小写）的消息正文或附件名，按消息创建时间倒序；默认无实现 */
+    suspend fun searchMessages(query: String): List<MessageMatch> = emptyList()
 }
+
+/** 一处消息命中：用户提问 / 回复正文，或提问附带的文件名。 */
+data class MessageMatch(
+    val sessionId: String,
+    val messageId: String,
+    val createdAt: Long,
+    val fromUser: Boolean,
+    /** 命中的完整文本（正文，或文件名） */
+    val text: String,
+    val isFileName: Boolean = false,
+)
 
 /** 附件原件，存于 filesDir/attachments/{id}。 */
 interface AttachmentStore {
@@ -221,4 +235,6 @@ interface ChatRepository {
     suspend fun delete(sessionId: String)
 
     suspend fun deleteAll()
+
+    suspend fun searchMessages(query: String): List<MessageMatch> = emptyList()
 }
