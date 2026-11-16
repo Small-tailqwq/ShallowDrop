@@ -30,6 +30,8 @@ class OkHttpExportLinkDownloader(
     client: OkHttpClient,
     private val dir: File,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** 与 ZIP 读取上限一致；测试可使用小阈值验证流式拒绝。 */
+    private val maxDownloadBytes: Long = 512L * 1024 * 1024,
     /** 仅测试替换：MockWebServer 只提供 http */
     private val resolve: (String) -> HttpUrl? = { parseExportLink(it)?.toHttpUrlOrNull() },
 ) : ExportLinkDownloader {
@@ -80,6 +82,7 @@ class OkHttpExportLinkDownloader(
                         }
                         val body = it.body
                         val total = body.contentLength().takeIf { length -> length >= 0 }
+                        if (total != null && total > maxDownloadBytes) fail(HistoryErrorCodes.DOWNLOAD_FAILED)
                         try {
                             body.byteStream().use { input ->
                                 file.outputStream().use { output ->
@@ -91,6 +94,7 @@ class OkHttpExportLinkDownloader(
                                         ensureActive()
                                         val read = input.read(buffer)
                                         if (read < 0) break
+                                        if (read.toLong() > maxDownloadBytes - bytes) fail(HistoryErrorCodes.DOWNLOAD_FAILED)
                                         // 写入失败（通常是空间不足）单独报存储错误，不当作下载失败
                                         try {
                                             output.write(buffer, 0, read)

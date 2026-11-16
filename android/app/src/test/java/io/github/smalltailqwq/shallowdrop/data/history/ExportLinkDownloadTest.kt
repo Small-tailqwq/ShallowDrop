@@ -89,6 +89,38 @@ class ExportLinkDownloadTest {
     }
 
     @Test
+    fun rejectsOversizedDeclaredAndChunkedBodies() {
+        val bounded = OkHttpExportLinkDownloader(OkHttpClient(), dir, Dispatchers.IO, maxDownloadBytes = 8) {
+            it.toHttpUrlOrNull()
+        }
+        val bytes = byteArrayOf(0x50, 0x4B, 0x03, 0x04) + ByteArray(5)
+        val responses = listOf(
+            MockResponse.Builder().body(Buffer().write(bytes)).build(),
+            MockResponse.Builder().chunkedBody(Buffer().write(bytes), 3).build(),
+            // 分块传输时 Content-Length 不是实际读取量的可靠来源。
+            MockResponse.Builder().chunkedBody(Buffer().write(bytes), 3).setHeader("Content-Length", "4").build(),
+        )
+        for (response in responses) {
+            server.enqueue(response)
+            expectCode(HistoryErrorCodes.DOWNLOAD_FAILED) {
+                bounded.download(link(), {}) { fail("超限文件不得交给导入器") }
+            }
+            assertTrue(dir.listFiles().orEmpty().isEmpty())
+        }
+    }
+
+    @Test
+    fun acceptsBodyExactlyAtDownloadLimit() = runBlocking {
+        val bytes = byteArrayOf(0x50, 0x4B, 0x03, 0x04) + ByteArray(4)
+        val bounded = OkHttpExportLinkDownloader(OkHttpClient(), dir, Dispatchers.IO, maxDownloadBytes = 8) {
+            it.toHttpUrlOrNull()
+        }
+        server.enqueue(MockResponse.Builder().chunkedBody(Buffer().write(bytes), 3).build())
+        bounded.download(link(), {}) { uri -> assertArrayEquals(bytes, File(uri.path!!).readBytes()) }
+        assertTrue(dir.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
     fun downloadsZipAndDeletesItAfterUse() = runBlocking {
         respond(200, zipBytes)
         val progress = mutableListOf<DownloadProgress>()

@@ -53,6 +53,22 @@ class DeepSeekApiTest {
         server.close()
     }
 
+    @Test
+    fun crossOriginRedirectDoesNotReceiveApiKey() = runBlocking {
+        MockWebServer().use { target ->
+            target.start()
+            target.enqueue(MockResponse.Builder().code(204).build())
+            val destination = target.url("/capture").newBuilder().host("127.0.0.1").build()
+            server.enqueue(MockResponse.Builder().code(302).setHeader("Location", destination).build())
+            val error = expectApiError { api.deleteFile("sk-local-redirect-test", "file-test") }
+            assertEquals(ReplyErrorKind.Http, error.kind)
+            assertEquals(302, error.status)
+            assertFalse(error.message.contains("sk-local-redirect-test"))
+            assertEquals("sk-local-redirect-test", server.takeRequest().headers["x-api-key"])
+            assertNull(target.takeRequest(200, TimeUnit.MILLISECONDS))
+        }
+    }
+
     private fun sse(body: String, chunk: Int? = null): MockResponse {
         val builder = MockResponse.Builder().code(200).setHeader("Content-Type", "text/event-stream; charset=utf-8")
         return (if (chunk == null) builder.body(body) else builder.chunkedBody(body, chunk)).build()

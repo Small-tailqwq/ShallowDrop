@@ -62,10 +62,15 @@ fun defaultOkHttpClient(): OkHttpClient = OkHttpClient.Builder()
  * @param json 用于协议结构的编解码；内部会在其基础上开启 ignoreUnknownKeys、coerceInputValues、encodeDefaults
  */
 class DeepSeekApi(
-    private val client: OkHttpClient = defaultOkHttpClient(),
+    client: OkHttpClient = defaultOkHttpClient(),
     private val apiOrigin: String = BuildConfig.API_ORIGIN,
     json: Json = Json,
 ) : ChatApi {
+    // 自定义鉴权头不会被 OkHttp 在跨域重定向时自动移除。
+    private val client = client.newBuilder()
+        .followRedirects(false)
+        .followSslRedirects(false)
+        .build()
     private val json = Json(from = json) {
         ignoreUnknownKeys = true
         coerceInputValues = true

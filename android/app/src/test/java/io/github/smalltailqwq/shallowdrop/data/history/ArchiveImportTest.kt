@@ -59,6 +59,65 @@ class ArchiveImportTest {
     private suspend fun allSessions(): List<Session> =
         store.observeSummaries().first().map { store.load(it.id)!! }.sortedBy { it.id }
 
+    @Test
+    fun forgedUncompressedSizeIsRejectedBeforeAllocation() {
+        val out = ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("manifest.json"))
+            zip.closeEntry()
+        }
+        val bytes = out.toByteArray()
+        val central = (0..bytes.size - 4).first { i ->
+            bytes[i] == 0x50.toByte() && bytes[i + 1] == 0x4b.toByte() &&
+                bytes[i + 2] == 1.toByte() && bytes[i + 3] == 2.toByte()
+        }
+        // 中央目录和数据描述符一致声明超大条目，压缩数据保持为有效的空流。
+        for (offset in listOf(central + 24, central - 4)) {
+            java.nio.ByteBuffer.wrap(bytes, offset, 4).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(Int.MAX_VALUE)
+        }
+        ArchiveZipReader.spool(bytes.inputStream(), env.paths.importTempDir).use { reader ->
+            val error = org.junit.Assert.assertThrows(ArchiveFormatException::class.java) { reader.next()!!.readBytes() }
+            assertEquals("JSON 条目超出大小限制", error.message)
+        }
+    }
+
+    @Test
+    fun jsonEntryLimitRejectsOversizedEntry() {
+        val bytes = ByteArrayOutputStream().also { out ->
+            ArchiveZipWriter(out).use { it.add("manifest.json", ByteArray(9)) }
+        }.toByteArray()
+        ArchiveZipReader.spool(bytes.inputStream(), env.paths.importTempDir).use { reader ->
+            val entry = reader.next()!!
+            org.junit.Assert.assertThrows(ArchiveFormatException::class.java) { entry.readBytes(8) }
+        }
+    }
+
+    @Test
+    fun expandedLimitCountsSkippedEntries() {
+        val bytes = ByteArrayOutputStream().also { out ->
+            ArchiveZipWriter(out).use {
+                it.add("one", ByteArray(4))
+                it.add("two", ByteArray(5))
+            }
+        }.toByteArray()
+        val file = File.createTempFile("bounded-", ".zip", env.context.cacheDir)
+        file.writeBytes(bytes)
+        ArchiveZipReader(file, deleteOnClose = true, maxExpandedBytes = 8).use { reader ->
+            reader.next()!!.skip()
+            org.junit.Assert.assertThrows(ArchiveFormatException::class.java) { reader.next()!!.skip() }
+        }
+        assertFalse(file.exists())
+    }
+
+    @Test
+    fun inputLimitChecksActualBytesAndCleansTemporaryFile() {
+        val dir = File(env.context.cacheDir, "bounded-input").apply { mkdirs() }
+        org.junit.Assert.assertThrows(ArchiveFormatException::class.java) {
+            ArchiveZipReader.spool(ByteArray(9).inputStream(), dir, maxBytes = 8)
+        }
+        assertTrue(dir.listFiles()!!.isEmpty())
+    }
+
     // ---------- 样例归档 ----------
 
     private val sessionA = Fx.session(

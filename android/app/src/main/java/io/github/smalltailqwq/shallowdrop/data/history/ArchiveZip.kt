@@ -48,12 +48,21 @@ internal fun checkEntryPath(raw: String): String {
  *
  * @param deleteOnClose 关闭时删除 [file]（来自 [ArchiveZipReader.spool] 的临时副本）
  */
-internal class ArchiveZipReader(private val file: File, private val deleteOnClose: Boolean = false) : Closeable {
-    private val raf = RandomAccessFile(file, "r")
+internal class ArchiveZipReader(
+    private val file: File,
+    private val deleteOnClose: Boolean = false,
+    private val maxExpandedBytes: Long = MAX_ARCHIVE_BYTES,
+) : Closeable {
+    private val raf = if (file.length() > MAX_ARCHIVE_BYTES) {
+        invalid("归档文件超出大小限制")
+    } else {
+        RandomAccessFile(file, "r")
+    }
     private val length = raf.length()
     private var directory: Directory? = null
     private var index = 0
     private var current: Entry? = null
+    private var expandedBytes = 0L
 
     /** 是否以 ZIP 本地文件头开始 */
     val isZip: Boolean = length >= 4 && read(0, 4).let {
@@ -96,6 +105,8 @@ internal class ArchiveZipReader(private val file: File, private val deleteOnClos
                 finishEntry()
                 return -1
             }
+            expandedBytes += n
+            if (expandedBytes > maxExpandedBytes) invalid("归档解压大小超出限制")
             written += n
             if (written > size) invalid("条目大小不符")
             crc.update(b, off, n)
@@ -147,11 +158,20 @@ internal class ArchiveZipReader(private val file: File, private val deleteOnClos
         }
 
         /** 读完整个条目：会话 JSON 需要完整解析 */
-        fun readBytes(): ByteArray {
-            val out = ByteArrayOutputStream(if (size in 0..Int.MAX_VALUE.toLong()) size.toInt() else 8192)
-            copyTo(out)
+        fun readBytes(maxBytes: Int = MAX_JSON_BYTES): ByteArray {
+            if (size > maxBytes) invalid("JSON 条目超出大小限制")
+            val out = ByteArrayOutputStream(minOf(maxBytes, 8192))
+            val buffer = ByteArray(8192)
+            while (true) {
+                val n = read(buffer)
+                if (n < 0) break
+                if (out.size().toLong() + n > maxBytes) invalid("JSON 条目超出大小限制")
+                out.write(buffer, 0, n)
+            }
             return out.toByteArray()
         }
+
+        fun release() { inflater?.end() }
 
         /** 不需要的条目也要读完，以校验大小与 CRC */
         fun skip() {
@@ -315,12 +335,16 @@ internal class ArchiveZipReader(private val file: File, private val deleteOnClos
     }
 
     override fun close() {
+        current?.release()
         current = null
         raf.close()
         if (deleteOnClose) file.delete()
     }
 
     companion object {
+        // JSON 会整体解析；图片逐块保存，归档总量采用独立限制。
+        private const val MAX_JSON_BYTES = 16 * 1024 * 1024
+        private const val MAX_ARCHIVE_BYTES = 512L * 1024 * 1024
         private const val READ_CHUNK = 256 * 1024
 
         private fun u16(bytes: ByteArray, at: Int) = (bytes[at].toInt() and 0xff) or ((bytes[at + 1].toInt() and 0xff) shl 8)
@@ -331,11 +355,23 @@ internal class ArchiveZipReader(private val file: File, private val deleteOnClos
          * 把输入流（SAF Uri 等）复制到 [dir] 下的临时文件后打开，关闭时删除副本。
          * 读取 ZIP 需要随机访问中央目录，内容 URI 通常只能顺序读取。
          */
-        fun spool(input: InputStream, dir: File): ArchiveZipReader {
+        fun spool(input: InputStream, dir: File, maxBytes: Long = MAX_ARCHIVE_BYTES): ArchiveZipReader {
             if (!dir.isDirectory && !dir.mkdirs()) throw IOException("无法创建临时目录：$dir")
             val file = File.createTempFile("import-", ".zip", dir)
             try {
-                input.use { source -> file.outputStream().use { source.copyTo(it, 64 * 1024) } }
+                input.use { source ->
+                    file.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var copied = 0L
+                        while (true) {
+                            val n = source.read(buffer)
+                            if (n < 0) break
+                            copied += n
+                            if (copied > maxBytes) invalid("归档文件超出大小限制")
+                            output.write(buffer, 0, n)
+                        }
+                    }
+                }
                 return ArchiveZipReader(file, deleteOnClose = true)
             } catch (error: Throwable) {
                 file.delete()
