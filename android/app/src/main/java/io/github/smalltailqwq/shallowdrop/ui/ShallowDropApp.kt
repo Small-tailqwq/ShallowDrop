@@ -28,7 +28,12 @@ import androidx.navigation.compose.rememberNavController
 import io.github.smalltailqwq.shallowdrop.ui.chat.ChatScreen
 import io.github.smalltailqwq.shallowdrop.ui.components.LocalAttachmentFile
 import io.github.smalltailqwq.shallowdrop.ui.onboarding.OnboardingScreen
+import io.github.smalltailqwq.shallowdrop.ui.settings.FontSizeScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.LicenseScreen
+import io.github.smalltailqwq.shallowdrop.ui.settings.ReplySwipeScreen
+import io.github.smalltailqwq.shallowdrop.ui.settings.SettingsViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavBackStackEntry
 import io.github.smalltailqwq.shallowdrop.ui.settings.SettingsScreen
 import io.github.smalltailqwq.shallowdrop.ui.theme.ShallowDropTheme
 import io.github.smalltailqwq.shallowdrop.ui.theme.isAppInDarkTheme
@@ -40,7 +45,7 @@ import kotlinx.serialization.Serializable
  *   OnboardingRoute —— 首次无 Key 时的引导页
  *   ChatRoute       —— 对话页（会话切换在页内完成，不进返回栈）
  *   VoiceRoute      —— 语音对话，挂断后回到对话页并打开写入的会话
- *   SettingsGraph   —— SettingsRoute、LicenseRoute
+ *   SettingsGraph   —— SettingsRoute、LicenseRoute、RechargeRoute、FontSizeRoute、ReplySwipeRoute
  */
 
 @Serializable
@@ -60,6 +65,12 @@ data object RechargeRoute
 
 @Serializable
 data object LicenseRoute
+
+@Serializable
+data object FontSizeRoute
+
+@Serializable
+data object ReplySwipeRoute
 
 /** 语音对话；sessionId 为 null 时首轮新建会话 */
 @Serializable
@@ -149,6 +160,8 @@ private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
                     onBack = { navController.popBackStack() },
                     onOpenLicense = { navController.navigate(LicenseRoute) },
                     onOpenRecharge = { navController.navigate(RechargeRoute) { launchSingleTop = true } },
+                    onOpenFontSize = { navController.navigate(FontSizeRoute) { launchSingleTop = true } },
+                    onOpenReplySwipe = { navController.navigate(ReplySwipeRoute) { launchSingleTop = true } },
                     incomingImport = incomingImport,
                     onIncomingImportHandled = { deps.incomingImport.value = null },
                 )
@@ -156,11 +169,37 @@ private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
             composable<RechargeRoute> {
                 io.github.smalltailqwq.shallowdrop.ui.settings.RechargeScreen(onBack = { navController.popBackStack() })
             }
+            // 预览类设置页离开时才保存：写入由设置页的 ViewModel 执行，页面出栈后协程不被取消
+            composable<FontSizeRoute> { entry ->
+                val settingsViewModel = settingsViewModel(navController, entry)
+                val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+                FontSizeScreen(
+                    initial = remember { settings.chatFontSize },
+                    onSave = settingsViewModel::setChatFontSize,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable<ReplySwipeRoute> { entry ->
+                val settingsViewModel = settingsViewModel(navController, entry)
+                val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+                ReplySwipeScreen(
+                    initial = remember { settings.replySwipe },
+                    onSave = settingsViewModel::setReplySwipe,
+                    onBack = { navController.popBackStack() },
+                )
+            }
             composable<LicenseRoute> {
                 LicenseScreen(onBack = { navController.popBackStack() })
             }
         }
     }
+}
+
+/** 子页面共用设置页（SettingsRoute）那份 ViewModel */
+@Composable
+private fun settingsViewModel(navController: NavHostController, entry: NavBackStackEntry): SettingsViewModel {
+    val parent = remember(entry) { navController.getBackStackEntry<SettingsRoute>() }
+    return viewModel(parent, factory = SettingsViewModel.Factory)
 }
 
 private inline fun <reified T : Any> NavHostController.hasInBackStack(): Boolean =

@@ -104,7 +104,7 @@ import java.time.LocalDate
 /** TODO 发布前确认开源仓库地址 */
 const val SOURCE_CODE_URL = "https://github.com/Small-tailqwq/ShallowDrop"
 
-private enum class SettingsDialog { Location, Recharge, ApiKey, Language, Theme, FontSize, ReplySwipe, Model, Compaction, Voice, ImportSource, ImportConfirm, DeleteAll }
+private enum class SettingsDialog { Location, Recharge, ApiKey, Language, Theme, Model, Compaction, Voice, ImportSource, ImportConfirm, DeleteAll }
 
 /** 设置页：通用（API Key、语言、主题、模型）、数据管理（导入 / 导出 / 删除全部）、关于。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -113,6 +113,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenLicense: () -> Unit,
     onOpenRecharge: () -> Unit = {},
+    onOpenFontSize: () -> Unit = {},
+    onOpenReplySwipe: () -> Unit = {},
     balanceViewModel: BalanceViewModel = viewModel(factory = BalanceViewModel.Factory),
     /** 从其他应用打开或分享进来的 ZIP；接手后调用 onIncomingImportHandled */
     incomingImport: Uri? = null,
@@ -196,13 +198,9 @@ fun SettingsScreen(
                     SettingRow(painterResource(R.drawable.ic_dark_outline_16), stringResource(R.string.theme), themeLabel(settings.theme)) {
                         dialog = SettingsDialog.Theme
                     }
-                    SettingRow(rememberVectorPainter(Icons.Outlined.TextFields), stringResource(R.string.chat_font_size), fontSizeLabel(settings.chatFontSize)) {
-                        dialog = SettingsDialog.FontSize
-                    }
+                    SettingRow(rememberVectorPainter(Icons.Outlined.TextFields), stringResource(R.string.chat_font_size), fontSizeLabel(settings.chatFontSize), onClick = onOpenFontSize)
                     SettingRow(rememberVectorPainter(Icons.Outlined.Swipe), stringResource(R.string.reply_swipe_title),
-                        if (settings.replySwipe.enabled) swipeDirectionLabel(settings.replySwipe.direction) else stringResource(R.string.reply_swipe_off)) {
-                        dialog = SettingsDialog.ReplySwipe
-                    }
+                        if (settings.replySwipe.enabled) swipeDirectionLabel(settings.replySwipe.direction) else stringResource(R.string.reply_swipe_off), onClick = onOpenReplySwipe)
                     SettingRow(rememberVectorPainter(Icons.Outlined.SmartToy), stringResource(R.string.model), settings.model.id) {
                         dialog = SettingsDialog.Model
                     }
@@ -346,19 +344,6 @@ fun SettingsScreen(
                 dialog = null
                 viewModel.setModel(it)
             },
-            onDismiss = { dialog = null },
-        )
-        SettingsDialog.FontSize -> FontSizeDialog(
-            initial = settings.chatFontSize,
-            onSave = {
-                viewModel.setChatFontSize(it)
-                dialog = null
-            },
-            onDismiss = { dialog = null },
-        )
-        SettingsDialog.ReplySwipe -> ReplySwipeDialog(
-            initial = settings.replySwipe,
-            onSave = { viewModel.setReplySwipe(it); dialog = null },
             onDismiss = { dialog = null },
         )
         SettingsDialog.Compaction -> CompactionDialog(
