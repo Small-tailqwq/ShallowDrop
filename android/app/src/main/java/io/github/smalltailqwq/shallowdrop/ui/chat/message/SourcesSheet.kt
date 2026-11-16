@@ -45,7 +45,7 @@ fun SourcesSheet(sources: List<Source>, onDismiss: () -> Unit) {
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .clickable { uriHandler.openUri(source.url) }
+                        .clickable { uriHandler.openWebUrl(source.url) }
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {

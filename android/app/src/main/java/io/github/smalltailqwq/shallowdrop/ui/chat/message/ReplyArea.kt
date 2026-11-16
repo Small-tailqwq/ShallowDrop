@@ -3,16 +3,28 @@ package io.github.smalltailqwq.shallowdrop.ui.chat.message
 import io.github.smalltailqwq.shallowdrop.ui.motion.MotionEaseOut
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.draw.rotate
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.Constraints
+import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import io.github.smalltailqwq.shallowdrop.ui.motion.pressClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,7 +32,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -58,7 +69,6 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.model.Message
@@ -119,9 +129,19 @@ private fun Modifier.shimmer(active: Boolean): Modifier {
     return alpha(alpha)
 }
 
+/** 思考区三态：收起、进行中的小窗（只露出末尾几行并自动滚动）、完全展开 */
+private enum class AreaMode { Collapsed, Peek, Expanded }
+
+/** 小窗高度 */
+private val PeekHeight = 132.dp
+
+/** 小窗顶部渐隐高度 */
+private val PeekFade = 36.dp
+
 /**
  * 思考与工具步骤时间线，对照 ReplyArea.tsx：
  * 开启深度思考时带可折叠标题（正在思考 / 正在搜索 / 已思考（用时 N 秒））；否则只有工具步骤。
+ * 思考和搜索进行中、用户未操作时以小窗滚动展示，结束后自动收起；点击小窗或标题完全展开。
  */
 @Composable
 fun ReplyArea(
@@ -133,28 +153,51 @@ fun ReplyArea(
     modifier: Modifier = Modifier,
 ) {
     if (view.steps.isEmpty() && !(message.thinking && streaming)) return
-    var open by rememberSaveable(message.id) { mutableStateOf(false) }
-    val chevronAngle by animateFloatAsState(if (open) 0f else -90f, tween(180, easing = MotionEaseOut), label = "thinking-chevron")
+    // null 表示用户未操作：跟随生成进度在小窗与收起之间切换
+    var userOpen by rememberSaveable(message.id) { mutableStateOf<Boolean?>(null) }
     val titleActive = streaming && !hasResponse
     val now = rememberNow(titleActive)
     val thinking = message.thinking || view.steps.any { it is Step.Thinking }
     val title = if (thinking) areaTitle(view, streaming, now, hasResponse) else null
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val mode = when {
+        title == null || userOpen == true -> AreaMode.Expanded
+        userOpen == false -> AreaMode.Collapsed
+        titleActive -> AreaMode.Peek
+        else -> AreaMode.Collapsed
+    }
+    val chevronAngle by animateFloatAsState(if (mode == AreaMode.Expanded) 0f else -90f, tween(220, easing = MotionEaseOut), label = "thinking-chevron")
+    val reveal = animateFloatAsState(if (mode == AreaMode.Collapsed) 0f else 1f, tween(320, easing = MotionEaseOut), label = "thinking-reveal")
+    val expand = animateFloatAsState(if (mode == AreaMode.Expanded) 1f else 0f, tween(360, easing = MotionEaseOut), label = "thinking-expand")
+    // 小窗内容增长时平滑上滚，而不是逐行跳动
+    var contentHeight by remember { mutableIntStateOf(0) }
+    val scrollHeight = animateFloatAsState(
+        contentHeight.toFloat(),
+        if (mode == AreaMode.Peek) spring(stiffness = Spring.StiffnessMediumLow) else snap(),
+        label = "thinking-scroll",
+    )
+    val peekPx = with(LocalDensity.current) { PeekHeight.toPx() }
+    val fadePx = with(LocalDensity.current) { PeekFade.toPx() }
 
     Column(modifier.fillMaxWidth()) {
         if (title != null) {
             Row(
                 Modifier
                     .clip(RoundedCornerShape(8.dp))
-                    .pressClickable { open = !open }
+                    .pressClickable { userOpen = mode != AreaMode.Expanded }
+                    .heightIn(min = 48.dp)
                     .padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                    DsIcon(R.drawable.ic_think_outline_16, contentDescription = null, tint = muted, modifier = Modifier.size(16.dp))
+                }
+                Spacer(Modifier.width(6.dp))
                 Text(
                     title.text(),
                     style = MaterialTheme.typography.bodyMedium,
                     color = muted,
-                    modifier = Modifier.shimmer(titleActive),
+                    modifier = Modifier.weight(1f, fill = false).shimmer(titleActive),
                 )
                 Spacer(Modifier.width(4.dp))
                 // 对照 ReplyArea.tsx：展开时向下，收起时向右
@@ -166,20 +209,66 @@ fun ReplyArea(
                 )
             }
         }
-        AnimatedVisibility(
-            visible = open || title == null,
-            enter = fadeIn(tween(180)) + expandVertically(tween(200, easing = MotionEaseOut)),
-            exit = fadeOut(tween(120)) + shrinkVertically(tween(200, easing = MotionEaseOut)),
-        ) {
-            Column(Modifier.padding(top = 4.dp)) {
-                view.steps.forEachIndexed { index, step ->
-                    StepItem(
-                        step = step,
-                        message = message,
-                        sources = view.sources,
-                        streaming = streaming,
-                        isLast = index == view.steps.lastIndex,
-                        onOpenSources = onOpenSources,
+        if (mode != AreaMode.Collapsed || reveal.value > 0f) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clipToBounds()
+                    .layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+                        val full = placeable.height.toFloat()
+                        val e = expand.value
+                        val scrolled = scrollHeight.value.coerceAtMost(full)
+                        val peek = minOf(scrolled, peekPx)
+                        val visible = (peek + (full - peek) * e) * reveal.value
+                        // 小窗贴底展示最新内容；展开过程中逐渐回到顶部对齐
+                        val offset = ((scrolled - visible).coerceAtLeast(0f) * (1f - e)).roundToInt()
+                        layout(placeable.width, visible.roundToInt()) { placeable.placeRelative(0, -offset) }
+                    }
+                    .graphicsLayer {
+                        alpha = reveal.value
+                        compositingStrategy = CompositingStrategy.Offscreen
+                    }
+                    .drawWithContent {
+                        drawContent()
+                        // 小窗内容溢出时顶部渐隐
+                        val strength = if (scrollHeight.value > peekPx) 1f - expand.value else 0f
+                        if (strength > 0f) {
+                            drawRect(
+                                Brush.verticalGradient(
+                                    0f to Color.Black.copy(alpha = 1f - strength),
+                                    1f to Color.Black,
+                                    startY = 0f,
+                                    endY = fadePx,
+                                ),
+                                size = Size(size.width, fadePx),
+                                blendMode = BlendMode.DstIn,
+                            )
+                        }
+                    },
+            ) {
+                Column(
+                    Modifier
+                        .padding(top = 4.dp)
+                        .onSizeChanged { contentHeight = it.height },
+                ) {
+                    view.steps.forEachIndexed { index, step ->
+                        StepItem(
+                            step = step,
+                            message = message,
+                            sources = view.sources,
+                            streaming = streaming,
+                            isLast = index == view.steps.lastIndex,
+                            onOpenSources = onOpenSources,
+                        )
+                    }
+                }
+                // 小窗阶段整体作为展开入口，避免误触内部网页标签
+                if (mode == AreaMode.Peek) {
+                    Box(
+                        Modifier
+                            .matchParentSize()
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { userOpen = true },
                     )
                 }
             }
@@ -217,12 +306,17 @@ private fun StepItem(
         is Step.Search -> SearchRow(step, message, streaming, isLast, onOpenSources)
         is Step.Open -> OpenRow(step, sources, isLast, onOpenSources)
         is Step.Find -> FindRow(step, isLast)
-        is Step.ReadLink -> TimelineRow(R.drawable.ic_link_outline_16, active = false, isLast = isLast, minHeaderHeight = 48.dp) {
-            ChipFlow {
-                Box(Modifier.heightIn(min = 48.dp), contentAlignment = Alignment.CenterStart) {
-                    Text(stringResource(R.string.reading_link), style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.shimmer(true))
+        is Step.ReadLink -> TimelineRow(R.drawable.ic_link_outline_16, active = false, isLast = isLast) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    stringResource(R.string.reading_link),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.shimmer(true),
+                )
+                ChipFlow {
+                    step.links.forEach { PageChip(it) }
                 }
-                step.links.forEach { PageChip(it) }
             }
         }
     }
@@ -235,43 +329,44 @@ private fun TimelineRow(
     active: Boolean,
     isLast: Boolean,
     failed: Boolean = false,
-    minHeaderHeight: Dp = 0.dp,
     onClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val line = LocalExtraColors.current.thinkingLine
-    val headerHeight = maxOf(minHeaderHeight, with(LocalDensity.current) { MaterialTheme.typography.bodyMedium.lineHeight.toDp() })
-    Row(
+    val headerHeight = with(LocalDensity.current) { MaterialTheme.typography.bodyMedium.lineHeight.toDp() }
+    // 竖线不参与高度测量，整行高度由右侧换行后的内容决定。
+    Box(
         Modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
             .clip(RoundedCornerShape(8.dp))
             .then(if (onClick != null) Modifier.pressClickable(onClick = onClick) else Modifier),
     ) {
-        Box(Modifier.width(24.dp).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
-            if (!isLast) {
-                Box(
-                    Modifier
-                        .padding(top = headerHeight / 2 + 11.dp)
-                        .width(1.dp)
-                        .fillMaxHeight()
-                        .background(line),
-                )
-            }
-            Box(Modifier.fillMaxWidth().height(headerHeight), contentAlignment = Alignment.Center) {
-                if (icon != null) {
-                    DsIcon(
-                        icon,
-                        contentDescription = null,
-                        tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(16.dp),
+        Box(Modifier.matchParentSize()) {
+            Box(Modifier.width(24.dp).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
+                if (!isLast) {
+                    Box(
+                        Modifier
+                            .padding(top = headerHeight / 2 + 11.dp)
+                            .width(1.dp)
+                            .fillMaxHeight()
+                            .background(line),
                     )
-                } else {
-                    Box(Modifier.size(7.dp).clip(CircleShape).background(if (active) MaterialTheme.colorScheme.primary else line))
+                }
+                Box(Modifier.fillMaxWidth().height(headerHeight), contentAlignment = Alignment.Center) {
+                    if (icon != null) {
+                        DsIcon(
+                            icon,
+                            contentDescription = null,
+                            tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    } else {
+                        Box(Modifier.size(7.dp).clip(CircleShape).background(if (active) MaterialTheme.colorScheme.primary else line))
+                    }
                 }
             }
         }
-        Box(Modifier.weight(1f).padding(start = 6.dp, bottom = if (isLast) 4.dp else 14.dp)) {
+        Box(Modifier.fillMaxWidth().padding(start = 30.dp, bottom = if (isLast) 4.dp else 14.dp)) {
             content()
         }
     }
@@ -281,6 +376,7 @@ private fun TimelineRow(
 @Composable
 private fun ChipFlow(content: @Composable () -> Unit) {
     FlowRow(
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
         itemVerticalAlignment = Alignment.CenterVertically,
@@ -320,14 +416,14 @@ private fun SearchRow(
     ) {
         val style = MaterialTheme.typography.bodyMedium
         when {
-            wip && step.queries.isNotEmpty() -> Row {
-                Text(stringResource(R.string.tool_search_intro) + " ", style = style, color = muted)
+            wip && step.queries.isNotEmpty() -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(stringResource(R.string.tool_search_intro), style = style, color = muted, modifier = Modifier.alignByBaseline())
                 Text(
                     step.queries[tick % step.queries.size],
                     style = style,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.shimmer(true),
+                    modifier = Modifier.weight(1f).alignByBaseline().shimmer(true),
                 )
             }
             wip -> Text(
@@ -361,25 +457,30 @@ private fun PageChip(page: PageItem) {
     val uriHandler = LocalUriHandler.current
     val failed = page.status == ToolStatus.Failed
     Surface(
-        onClick = { if (page.url.isNotEmpty()) uriHandler.openUri(page.url) },
+        onClick = { uriHandler.openWebUrl(page.url) },
+        modifier = Modifier.widthIn(max = 240.dp),
         enabled = !failed && page.url.isNotEmpty(),
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
-        Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
                 page.title,
                 style = MaterialTheme.typography.labelMedium,
                 color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 180.dp),
+                modifier = Modifier.weight(1f, fill = false),
             )
             DsIcon(
                 R.drawable.ic_right_up_outline_14,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 4.dp).size(12.dp),
+                modifier = Modifier.size(12.dp),
             )
         }
     }
@@ -390,33 +491,30 @@ private fun PageChip(page: PageItem) {
 private fun OpenRow(step: Step.Open, sources: List<Source>, isLast: Boolean, onOpenSources: (List<Source>) -> Unit) {
     val allFailed = step.pages.all { it.status == ToolStatus.Failed }
     val count = step.pages.size
-    TimelineRow(if (allFailed) R.drawable.ic_browse_warning_outline_16 else R.drawable.ic_browse_outline_16, active = false, isLast = isLast, failed = allFailed, minHeaderHeight = if (allFailed) 0.dp else 48.dp) {
+    TimelineRow(if (allFailed) R.drawable.ic_browse_warning_outline_16 else R.drawable.ic_browse_outline_16, active = false, isLast = isLast, failed = allFailed) {
         if (allFailed) {
             Text(stringResource(R.string.tool_open_fail), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            ChipFlow {
-                // 可点击网页标签保留 48dp 点击范围；标题与左侧标记按同一首行高度居中。
-                Box(Modifier.heightIn(min = 48.dp), contentAlignment = Alignment.CenterStart) {
-                    Text(
-                        pluralStringResource(R.plurals.tool_open_intro, count, count),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                step.pages.take(5).forEach { PageChip(it) }
-                if (count > 5) {
-                    Surface(
-                        onClick = { onOpenSources(sources.filter { source -> step.pages.any { it.url == source.url } }) },
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainer,
-                    ) {
-                        Text(
-                            stringResource(R.string.tool_open_view_all),
-                            style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    pluralStringResource(R.plurals.tool_open_intro, count, count),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ChipFlow {
+                    step.pages.take(5).forEach { PageChip(it) }
+                    if (count > 5) {
+                        Surface(
+                            onClick = { onOpenSources(sources.filter { source -> step.pages.any { it.url == source.url } }) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainer,
+                        ) {
+                            Text(
+                                stringResource(R.string.tool_open_view_all),
+                                style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -432,9 +530,11 @@ private fun FindRow(step: Step.Find, isLast: Boolean) {
         if (allFailed) {
             Text(stringResource(R.string.tool_find_fail), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            ChipFlow {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(stringResource(R.string.tool_find_intro), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                step.patterns.forEach { FindChip(it) }
+                ChipFlow {
+                    step.patterns.forEach { FindChip(it) }
+                }
             }
         }
     }
@@ -443,8 +543,8 @@ private fun FindRow(step: Step.Find, isLast: Boolean) {
 @Composable
 private fun FindChip(item: FindItem) {
     val failed = item.status == ToolStatus.Failed
-    Surface(shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
-        Row(Modifier.padding(horizontal = 8.dp, vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(modifier = Modifier.widthIn(max = 240.dp), shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+        Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             if (item.status != ToolStatus.Wip) {
                 DsIcon(
                     if (failed) R.drawable.ic_close_fill_14 else R.drawable.ic_checked_outline_14,
@@ -453,7 +553,7 @@ private fun FindChip(item: FindItem) {
                     modifier = Modifier.padding(end = 4.dp).size(12.dp),
                 )
             }
-            Text(item.pattern, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.pattern, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
         }
     }
 }
