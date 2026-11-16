@@ -35,12 +35,11 @@ import androidx.compose.material.icons.outlined.AddComment
 import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Menu
-import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import io.github.smalltailqwq.shallowdrop.ui.motion.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -54,6 +53,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.rememberDrawerState
+import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -71,6 +72,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -82,6 +86,7 @@ import io.github.smalltailqwq.shallowdrop.ui.chat.reply.Source
 import io.github.smalltailqwq.shallowdrop.ui.common.resolve
 import io.github.smalltailqwq.shallowdrop.ui.components.AppMark
 import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
+import io.github.smalltailqwq.shallowdrop.ui.theme.ChatTextTheme
 import io.github.smalltailqwq.shallowdrop.ui.sider.SessionListViewModel
 import io.github.smalltailqwq.shallowdrop.ui.sider.SessionSider
 import kotlinx.coroutines.flow.merge
@@ -133,10 +138,6 @@ fun ChatScreen(
             SessionSider(
                 groups = groups,
                 activeId = state.sessionId,
-                onNewChat = {
-                    viewModel.openSession(null)
-                    closeDrawer()
-                },
                 onSelect = {
                     viewModel.openSession(it)
                     closeDrawer()
@@ -223,6 +224,16 @@ private fun ChatContent(
     onOpenSettings: () -> Unit,
     onOpenVoice: () -> Unit,
 ) {
+    val speech: MessageSpeechViewModel = viewModel(factory = MessageSpeechViewModel.Factory)
+    val readingId by speech.messageId.collectAsStateWithLifecycle()
+    val languageTag = androidx.compose.ui.platform.LocalConfiguration.current.locales[0].toLanguageTag()
+    val context = LocalContext.current
+    LifecycleStartEffect(speech) { onStopOrDispose { speech.stop() } }
+    DisposableEffect(state.sessionId) { onDispose { speech.stop() } }
+    LaunchedEffect(speech) { speech.events.collect { snackbar.showSnackbar(it.resolve(context)) } }
+    LaunchedEffect(state.conversation, state.settings.autoReadAloud, languageTag) {
+        speech.updateAutomatic(state.conversation, state.settings.autoReadAloud, languageTag)
+    }
     val listState = rememberLazyListState()
     // 每个会话各自的跟随状态，打开会话时从底部开始
     val follow = rememberFollowState(state.sessionId)
@@ -247,8 +258,8 @@ private fun ChatContent(
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                expandedHeight = (64 + 64 * (LocalDensity.current.fontScale - 1f).coerceAtLeast(0f)).dp,
+            TopAppBar(
+                expandedHeight = (56 + 32 * (LocalDensity.current.fontScale - 1f).coerceAtLeast(0f)).dp,
                 title = { ChatTopTitle(title, state.settings.model, viewModel::setModel) },
                 navigationIcon = {
                     IconButton(onClick = onMenu) {
@@ -258,10 +269,19 @@ private fun ChatContent(
                 actions = {
                     IconButton(onClick = onOpenVoice) {
                         // chat-demo 没有电话图标，沿用 Material
-                        Icon(Icons.Outlined.Call, contentDescription = stringResource(R.string.voice_chat), modifier = Modifier.size(22.dp))
+                        Icon(Icons.Outlined.Call, contentDescription = stringResource(R.string.voice_chat), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
+                    }
+                    IconButton(onClick = viewModel::toggleAutoReadAloud,
+                        modifier = Modifier.semantics { toggleableState = ToggleableState(state.settings.autoReadAloud) }) {
+                        DsIcon(
+                            if (state.settings.autoReadAloud) R.drawable.ic_speaker_outline_20 else R.drawable.ic_speaker_off_outline_20,
+                            contentDescription = stringResource(if (state.settings.autoReadAloud) R.string.auto_read_aloud_disable else R.string.auto_read_aloud_enable),
+                            modifier = Modifier.size(22.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     IconButton(onClick = { viewModel.openSession(null) }, enabled = state.sessionId != null) {
-                        DsIcon(R.drawable.ic_new_chat_outline_20, contentDescription = stringResource(R.string.new_chat), modifier = Modifier.size(22.dp))
+                        DsIcon(R.drawable.ic_new_chat_outline_20, contentDescription = stringResource(R.string.new_chat), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
@@ -270,72 +290,78 @@ private fun ChatContent(
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .consumeWindowInsets(padding)
-                .imePadding(),
-        ) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                when {
-                    conversation != null && conversation.turns.isNotEmpty() -> MessageList(
-                        conversation = conversation,
-                        listState = listState,
-                        follow = follow,
-                        actions = actions,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    // 已选会话但尚未加载完成时留空，避免闪现欢迎页
-                    state.sessionId != null && conversation == null -> Unit
-                    else -> Welcome(Modifier.align(Alignment.Center))
-                }
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = conversation != null && !follow.following && listState.canScrollForward,
-                    enter = fadeIn() + scaleIn(),
-                    exit = fadeOut() + scaleOut(),
-                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
-                ) {
-                    SmallFloatingActionButton(
-                        onClick = {
-                            scope.launch {
-                                listState.scrollToBottom(animated = true)
-                                follow.following = true
-                            }
-                        },
-                        shape = CircleShape,
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ChatTextTheme(state.settings.chatFontSize) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .consumeWindowInsets(padding)
+                    .imePadding(),
+            ) {
+                Box(Modifier.weight(1f).fillMaxWidth()) {
+                    when {
+                        conversation != null && conversation.turns.isNotEmpty() -> MessageList(
+                            conversation = conversation,
+                            listState = listState,
+                            follow = follow,
+                            actions = actions,
+                            replySwipe = state.settings.replySwipe,
+                            onNewChat = { viewModel.openSession(null) },
+                            readingId = readingId,
+                            onReadAloud = { id, text -> speech.toggle(id, text, languageTag) },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        // 已选会话但尚未加载完成时留空，避免闪现欢迎页
+                        state.sessionId != null && conversation == null -> Unit
+                        else -> Welcome(Modifier.align(Alignment.Center))
+                    }
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = conversation != null && !follow.following && listState.canScrollForward,
+                        enter = fadeIn(androidx.compose.animation.core.tween(180)) + scaleIn(androidx.compose.animation.core.tween(180), initialScale = 0.95f),
+                        exit = fadeOut(androidx.compose.animation.core.tween(120)) + scaleOut(androidx.compose.animation.core.tween(120), targetScale = 0.95f),
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp),
                     ) {
-                        DsIcon(R.drawable.ic_chevron_down_outline_14, contentDescription = stringResource(R.string.scroll_to_bottom), modifier = Modifier.size(18.dp))
+                        SmallFloatingActionButton(
+                            onClick = {
+                                scope.launch {
+                                    listState.scrollToBottom(animated = true)
+                                    follow.following = true
+                                }
+                            },
+                            shape = CircleShape,
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ) {
+                            DsIcon(R.drawable.ic_chevron_down_outline_14, contentDescription = stringResource(R.string.scroll_to_bottom), modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
-            }
-            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                ChatInputBar(
-                    state = state,
-                    onTextChange = viewModel::onTextChange,
-                    onSend = {
-                        follow.following = true
-                        viewModel.send()
-                    },
-                    onStop = viewModel::stop,
-                    onToggleThinking = { viewModel.toggleThinking() },
-                    onToggleSearch = { viewModel.toggleSearch() },
-                    onAddAttachments = viewModel::addAttachments,
-                    onRemoveAttachment = { viewModel.removeAttachment(it) },
-                    onRetryAttachment = viewModel::retryAttachment,
-                    modifier = Modifier.widthIn(max = 800.dp).padding(start = 12.dp, end = 12.dp, top = 8.dp),
-                )
-                // 有消息时在输入栏下方提示 AI 生成；新对话保持干净
-                if (conversation != null && conversation.turns.isNotEmpty()) {
-                    Text(
-                        stringResource(R.string.content_caveat),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(vertical = 6.dp),
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    ChatInputBar(
+                        state = state,
+                        onTextChange = viewModel::onTextChange,
+                        onSend = {
+                            follow.following = true
+                            viewModel.send()
+                        },
+                        onStop = viewModel::stop,
+                        onToggleThinking = { viewModel.toggleThinking() },
+                        onToggleSearch = { viewModel.toggleSearch() },
+                        onAddAttachments = viewModel::addAttachments,
+                        onRemoveAttachment = { viewModel.removeAttachment(it) },
+                        onRetryAttachment = viewModel::retryAttachment,
+                        modifier = Modifier.widthIn(max = 784.dp).padding(start = 8.dp, end = 8.dp, top = 8.dp),
                     )
-                } else {
-                    Spacer(Modifier.height(12.dp))
+                    // 有消息时在输入栏下方提示 AI 生成；新对话保持干净
+                    if (conversation != null && conversation.turns.isNotEmpty()) {
+                        Text(
+                            stringResource(R.string.content_caveat),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        )
+                    } else {
+                        Spacer(Modifier.height(12.dp))
+                    }
                 }
             }
         }
@@ -350,8 +376,8 @@ private fun ChatContent(
 @Composable
 private fun Welcome(modifier: Modifier = Modifier) {
     Column(modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-        AppMark(Modifier.size(40.dp))
-        Spacer(Modifier.height(14.dp))
+        AppMark(Modifier.size(width = 56.dp, height = 40.dp))
+        Spacer(Modifier.height(24.dp))
         Text(
             stringResource(R.string.welcome),
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),

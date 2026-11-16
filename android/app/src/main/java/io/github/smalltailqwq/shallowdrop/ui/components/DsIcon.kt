@@ -1,5 +1,7 @@
 package io.github.smalltailqwq.shallowdrop.ui.components
 
+import io.github.smalltailqwq.shallowdrop.ui.motion.pressFeedback
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -48,12 +50,14 @@ fun DsIcon(
 /** 二级页面左上角的圆形返回按钮。 */
 @Composable
 fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val press = androidx.compose.runtime.remember { MutableInteractionSource() }
     Surface(
         onClick = onClick,
+        interactionSource = press,
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        modifier = modifier.size(40.dp),
+        modifier = modifier.size(40.dp).pressFeedback(press),
     ) {
         Box(contentAlignment = Alignment.Center) {
             DsIcon(

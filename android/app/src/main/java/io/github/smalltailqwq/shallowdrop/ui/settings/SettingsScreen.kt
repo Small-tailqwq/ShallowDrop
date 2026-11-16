@@ -3,6 +3,7 @@ package io.github.smalltailqwq.shallowdrop.ui.settings
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
+import android.os.SystemClock
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -12,7 +13,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
+import io.github.smalltailqwq.shallowdrop.ui.motion.pressClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -36,9 +37,15 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.SmartToy
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.outlined.Compress
+import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material.icons.outlined.Swipe
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import io.github.smalltailqwq.shallowdrop.ui.motion.AlertDialog
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -51,7 +58,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import io.github.smalltailqwq.shallowdrop.ui.motion.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -79,13 +86,17 @@ import io.github.smalltailqwq.shallowdrop.core.contract.ImageRestoreState
 import io.github.smalltailqwq.shallowdrop.core.model.AppLocale
 import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
 import io.github.smalltailqwq.shallowdrop.core.model.ThemePreference
-import io.github.smalltailqwq.shallowdrop.core.model.TtsVoice
 import io.github.smalltailqwq.shallowdrop.ui.common.ApiKeyField
 import io.github.smalltailqwq.shallowdrop.ui.common.ConfirmDialog
 import io.github.smalltailqwq.shallowdrop.ui.common.GetApiKeyButton
 import io.github.smalltailqwq.shallowdrop.ui.common.resolve
 import io.github.smalltailqwq.shallowdrop.ui.components.BackButton
 import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
+import io.github.smalltailqwq.shallowdrop.ui.easteregg.PelicanEasterEgg
+import io.github.smalltailqwq.shallowdrop.ui.easteregg.RideStyle
+import io.github.smalltailqwq.shallowdrop.ui.easteregg.VersionTapTrigger
+import io.github.smalltailqwq.shallowdrop.ui.voice.VoicePickerSheet
+import io.github.smalltailqwq.shallowdrop.ui.voice.label
 import io.github.smalltailqwq.shallowdrop.ui.theme.groupedCardColor
 import io.github.smalltailqwq.shallowdrop.ui.theme.groupedPageColor
 import java.time.LocalDate
@@ -93,7 +104,7 @@ import java.time.LocalDate
 /** TODO 发布前确认开源仓库地址 */
 const val SOURCE_CODE_URL = "https://github.com/Small-tailqwq/ShallowDrop"
 
-private enum class SettingsDialog { ApiKey, Language, Theme, Model, Voice, ImportSource, ImportConfirm, DeleteAll }
+private enum class SettingsDialog { Location, Recharge, ApiKey, Language, Theme, FontSize, ReplySwipe, Model, Compaction, Voice, ImportSource, ImportConfirm, DeleteAll }
 
 /** 设置页：通用（API Key、语言、主题、模型）、数据管理（导入 / 导出 / 删除全部）、关于。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -101,12 +112,24 @@ private enum class SettingsDialog { ApiKey, Language, Theme, Model, Voice, Impor
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenLicense: () -> Unit,
+    onOpenRecharge: () -> Unit = {},
+    balanceViewModel: BalanceViewModel = viewModel(factory = BalanceViewModel.Factory),
     /** 从其他应用打开或分享进来的 ZIP；接手后调用 onIncomingImportHandled */
     incomingImport: Uri? = null,
     onIncomingImportHandled: () -> Unit = {},
     viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val savingCompaction by viewModel.savingCompaction.collectAsStateWithLifecycle()
+    val haptic = LocalHapticFeedback.current
+    val balance by balanceViewModel.state.collectAsStateWithLifecycle()
+    val acceptingRecharge by viewModel.acceptingRecharge.collectAsStateWithLifecycle()
+    val versionTaps = remember { VersionTapTrigger() }
+    var rideStyle by rememberSaveable { mutableStateOf<RideStyle?>(null) }
+    androidx.lifecycle.compose.LifecycleResumeEffect(balanceViewModel) {
+        balanceViewModel.refresh()
+        onPauseOrDispose { versionTaps.reset() }
+    }
     val task by viewModel.task.collectAsStateWithLifecycle()
     val imageRestore by viewModel.imageRestore.collectAsStateWithLifecycle()
     val maskedKey by viewModel.maskedKey.collectAsStateWithLifecycle()
@@ -173,12 +196,35 @@ fun SettingsScreen(
                     SettingRow(painterResource(R.drawable.ic_dark_outline_16), stringResource(R.string.theme), themeLabel(settings.theme)) {
                         dialog = SettingsDialog.Theme
                     }
+                    SettingRow(rememberVectorPainter(Icons.Outlined.TextFields), stringResource(R.string.chat_font_size), fontSizeLabel(settings.chatFontSize)) {
+                        dialog = SettingsDialog.FontSize
+                    }
+                    SettingRow(rememberVectorPainter(Icons.Outlined.Swipe), stringResource(R.string.reply_swipe_title),
+                        if (settings.replySwipe.enabled) swipeDirectionLabel(settings.replySwipe.direction) else stringResource(R.string.reply_swipe_off)) {
+                        dialog = SettingsDialog.ReplySwipe
+                    }
                     SettingRow(rememberVectorPainter(Icons.Outlined.SmartToy), stringResource(R.string.model), settings.model.id) {
                         dialog = SettingsDialog.Model
                     }
-                    SettingRow(rememberVectorPainter(Icons.Outlined.RecordVoiceOver), stringResource(R.string.tts_voice), voiceLabel(settings.ttsVoice)) {
+                    SettingRow(rememberVectorPainter(Icons.Outlined.Compress), stringResource(R.string.compaction_title),
+                        if (settings.compactionEnabled) stringResource(R.string.compaction_thresholds, settings.compactionThresholds.backgroundPercent, settings.compactionThresholds.foregroundPercent)
+                        else stringResource(R.string.compaction_off)) {
+                        dialog = SettingsDialog.Compaction
+                    }
+                    SettingRow(rememberVectorPainter(Icons.Outlined.RecordVoiceOver), stringResource(R.string.tts_voice), settings.ttsVoice.label()) {
                         dialog = SettingsDialog.Voice
                     }
+                }
+                Section(stringResource(R.string.location_title)) {
+                    SettingRow(rememberVectorPainter(Icons.Outlined.LocationOn), stringResource(R.string.location_mode),
+                        if (settings.location.mode == io.github.smalltailqwq.shallowdrop.core.model.LocationMode.Custom) settings.location.custom else locationModeLabel(settings.location.mode)) {
+                        dialog = SettingsDialog.Location
+                    }
+                }
+                Section(stringResource(R.string.api_balance)) {
+                    BalanceSection(balance, onRefresh = balanceViewModel::refresh, onRecharge = {
+                        if (settings.rechargeNoticeAccepted) onOpenRecharge() else dialog = SettingsDialog.Recharge
+                    })
                 }
                 Section(stringResource(R.string.data)) {
                     val importing = task as? DataTask.Importing
@@ -241,7 +287,13 @@ fun SettingsScreen(
                     ) { dialog = SettingsDialog.DeleteAll }
                 }
                 Section(stringResource(R.string.about)) {
-                    SettingRow(rememberVectorPainter(Icons.Outlined.Info), stringResource(R.string.version), BuildConfig.VERSION_NAME, chevron = false, onClick = null)
+                    Text(stringResource(R.string.project_notice), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
+                    SettingRow(rememberVectorPainter(Icons.Outlined.Info), stringResource(R.string.version), BuildConfig.VERSION_NAME, chevron = false) {
+                        if (versionTaps.tap(SystemClock.uptimeMillis())) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            rideStyle = RideStyle.entries.random()
+                        }
+                    }
                     SettingRow(rememberVectorPainter(Icons.Outlined.Gavel), stringResource(R.string.license), "MIT", onClick = onOpenLicense)
                     SettingRow(rememberVectorPainter(Icons.Outlined.Code), stringResource(R.string.source_code), trailing = painterResource(R.drawable.ic_right_up_outline_14)) {
                         uriHandler.openUri(SOURCE_CODE_URL)
@@ -252,8 +304,17 @@ fun SettingsScreen(
         }
     }
 
+    rideStyle?.let { style -> PelicanEasterEgg(style, onDismiss = { rideStyle = null }) }
+
     when (dialog) {
-        SettingsDialog.ApiKey -> ApiKeyDialog(viewModel, hasKey = settings.hasApiKey, onDismiss = { dialog = null })
+        SettingsDialog.Location -> LocationDialog(settings.location,
+            onSave = { viewModel.setLocation(it) { dialog = null } }, onDismiss = { dialog = null })
+        SettingsDialog.Recharge -> RechargeNotice(
+            onAgree = { viewModel.acceptRechargeNotice { dialog = null; onOpenRecharge() } },
+            onDismiss = { dialog = null },
+            saving = acceptingRecharge,
+        )
+        SettingsDialog.ApiKey -> ApiKeyDialog(viewModel, hasKey = settings.hasApiKey, onDismiss = { dialog = null; balanceViewModel.refresh() })
         SettingsDialog.Language -> ChoiceDialog(
             title = stringResource(R.string.language),
             options = AppLocale.entries,
@@ -287,17 +348,35 @@ fun SettingsScreen(
             },
             onDismiss = { dialog = null },
         )
-        SettingsDialog.Voice -> ChoiceDialog(
-            title = stringResource(R.string.tts_voice),
-            options = TtsVoice.entries,
-            selected = settings.ttsVoice,
-            label = { voiceLabel(it) },
-            onSelect = {
+        SettingsDialog.FontSize -> FontSizeDialog(
+            initial = settings.chatFontSize,
+            onSave = {
+                viewModel.setChatFontSize(it)
                 dialog = null
-                viewModel.setTtsVoice(it)
             },
             onDismiss = { dialog = null },
         )
+        SettingsDialog.ReplySwipe -> ReplySwipeDialog(
+            initial = settings.replySwipe,
+            onSave = { viewModel.setReplySwipe(it); dialog = null },
+            onDismiss = { dialog = null },
+        )
+        SettingsDialog.Compaction -> CompactionDialog(
+            initial = settings.compactionThresholds,
+            initiallyEnabled = settings.compactionEnabled,
+            saving = savingCompaction,
+            onSave = { thresholds, enabled ->
+                val changed = thresholds != settings.compactionThresholds || enabled != settings.compactionEnabled
+                viewModel.setCompactionSettings(thresholds, enabled) {
+                    if (changed) haptic.performHapticFeedback(
+                        if (android.os.Build.VERSION.SDK_INT >= 30) HapticFeedbackType.Confirm else HapticFeedbackType.TextHandleMove,
+                    )
+                    dialog = null
+                }
+            },
+            onDismiss = { dialog = null },
+        )
+        SettingsDialog.Voice -> VoicePickerSheet(onDismiss = { dialog = null })
         SettingsDialog.ImportSource -> ImportSourceDialog(
             link = linkText,
             onLinkChange = { linkText = it },
@@ -397,12 +476,6 @@ private fun readClipboardText(context: Context): String? {
 }
 
 @Composable
-private fun voiceLabel(voice: TtsVoice) = when (voice) {
-    TtsVoice.Stella -> stringResource(R.string.tts_voice_stella)
-    TtsVoice.Tide -> stringResource(R.string.tts_voice_tide)
-}
-
-@Composable
 private fun localeLabel(locale: AppLocale) = when (locale) {
     AppLocale.System -> stringResource(R.string.follow_system)
     AppLocale.ZhCN -> stringResource(R.string.locale_zh)
@@ -446,7 +519,7 @@ private fun SettingRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .then(if (onClick != null) Modifier.clickable(enabled = enabled, onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.pressClickable(enabled = enabled, onClick = onClick) else Modifier)
             .heightIn(min = 48.dp)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

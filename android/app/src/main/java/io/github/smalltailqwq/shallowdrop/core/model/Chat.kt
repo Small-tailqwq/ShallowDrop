@@ -119,6 +119,13 @@ data class ReplyError(
 )
 
 @Serializable
+data class ContextSummary(
+    val sourceHash: String,
+    val model: ChatModel,
+    val text: String,
+)
+
+@Serializable
 sealed interface Message {
     val id: String
     val createdAt: Long
@@ -157,6 +164,10 @@ sealed interface Message {
         val stopDetails: StopDetails? = null,
         val usage: MessageUsage? = null,
         val error: ReplyError? = null,
+        /** 本条及之前对话的摘要；原始消息仍完整保留。 */
+        val contextSummary: ContextSummary? = null,
+        /** 本轮请求实际使用的摘要版本，用于解释 usage 所属的上下文。 */
+        val contextSummaryId: String? = null,
     ) : Message
 }
 

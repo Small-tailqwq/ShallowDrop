@@ -72,11 +72,17 @@ class ChatScrollTest {
         override val settings: StateFlow<AppSettings> = MutableStateFlow(AppSettings(hasApiKey = true))
         override suspend fun apiKey(): String? = "k"
         override suspend fun setApiKey(apiKey: String?) = Unit
-        override suspend fun setLocale(locale: AppLocale) = Unit
+        override suspend fun acceptRechargeNotice() = Unit
+        override suspend fun setLocation(location: io.github.smalltailqwq.shallowdrop.core.model.LocationPreference) = Unit
+    override suspend fun setLocale(locale: AppLocale) = Unit
         override suspend fun setTheme(theme: ThemePreference) = Unit
+        override suspend fun setChatFontSize(size: io.github.smalltailqwq.shallowdrop.core.model.ChatFontSize) = Unit
+        override suspend fun setAutoReadAloud(enabled: Boolean) = Unit
+        override suspend fun setReplySwipe(settings: io.github.smalltailqwq.shallowdrop.core.model.ReplySwipeSettings) = Unit
         override suspend fun setThinking(enabled: Boolean) = Unit
         override suspend fun setSearch(enabled: Boolean) = Unit
         override suspend fun setModel(model: ChatModel) = Unit
+        override suspend fun setCompactionSettings(thresholds: io.github.smalltailqwq.shallowdrop.core.model.CompactionThresholds, enabled: Boolean) = Unit
     }
 
 
@@ -140,8 +146,6 @@ class ChatScrollTest {
         list().performTouchInput { swipeDown() }
         compose.onNodeWithContentDescription("回到底部").assertIsDisplayed()
         compose.runOnIdle { repo.conversation.value = conversation(text = "新增内容。\n\n".repeat(70) + "末尾二", generating = true) }
-        compose.onNodeWithContentDescription("回到底部").assertIsDisplayed()
-        compose.waitUntil(5_000) { compose.onAllNodesWithText("末尾二", substring = true).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("回到底部").assertIsDisplayed()
         compose.onNodeWithText("末尾二", substring = true).assertIsNotDisplayed()
         compose.onNodeWithContentDescription("回到底部").performClick()

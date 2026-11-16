@@ -57,7 +57,7 @@ object MarkdownParser {
             ),
         )
         .enabledBlockTypes(enabledBlockTypes())
-        .includeSourceSpans(IncludeSourceSpans.BLOCKS)
+        .includeSourceSpans(IncludeSourceSpans.BLOCKS_AND_INLINES)
         .build()
 
     /** 不含 IndentedCodeBlock */
@@ -90,6 +90,7 @@ object MarkdownParser {
 
     internal fun parseTopLevel(markdown: String): List<TopLevelBlock> {
         val document = parser.parse(markdown) as Document
+        repairCjkStrongEmphasis(document, markdown)
         val result = ArrayList<TopLevelBlock>()
         var child = document.firstChild
         while (child != null) {

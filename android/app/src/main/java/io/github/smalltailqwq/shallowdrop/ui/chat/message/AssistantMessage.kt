@@ -20,12 +20,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.material3.IconButton
+import io.github.smalltailqwq.shallowdrop.ui.motion.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import io.github.smalltailqwq.shallowdrop.ui.motion.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import io.github.smalltailqwq.shallowdrop.ui.motion.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -34,7 +34,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -42,11 +41,11 @@ import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.contract.TurnView
 import io.github.smalltailqwq.shallowdrop.core.model.Message
 import io.github.smalltailqwq.shallowdrop.core.model.StopReason
+import io.github.smalltailqwq.shallowdrop.core.model.ReplySwipeSettings
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.NoticeAction
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.Source
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.buildReplyView
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.describeReply
-import io.github.smalltailqwq.shallowdrop.ui.common.TOP_UP_URL
 import io.github.smalltailqwq.shallowdrop.ui.common.resolve
 import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
 
@@ -63,6 +62,10 @@ fun AssistantMessage(
     onOpenSources: (List<Source>) -> Unit,
     onChangeApiKey: () -> Unit,
     modifier: Modifier = Modifier,
+    reading: Boolean = false,
+    onReadAloud: (String) -> Unit = {},
+    swipeSettings: ReplySwipeSettings = ReplySwipeSettings(),
+    onNewChat: () -> Unit = {},
 ) {
     val message = turn.message as Message.Assistant
     val view = remember(message, streaming) { buildReplyView(message, streaming) }
@@ -77,10 +80,10 @@ fun AssistantMessage(
     // 只有错误提示、没有正文时不提供复制；重试放进错误卡片，操作栏不再重复
     val copyText = responseText
     val errorOnly = notice != null && !notice.asResponse && responseText.isEmpty()
-    val retryInCard = errorOnly && !refused && turn.canRegenerate
+    val canRegenerate = isLast && !busy && !refused && turn.canRegenerate && notice?.action != NoticeAction.NewChat
+    val retryInCard = errorOnly && canRegenerate
     val waiting = streaming && view.steps.isEmpty() && view.answer == null && !message.thinking
     val copy = rememberCopyAction()
-    val uriHandler = LocalUriHandler.current
 
     Column(modifier.fillMaxWidth()) {
         if (!refused) {
@@ -94,7 +97,9 @@ fun AssistantMessage(
             )
         }
         if (answer != null) {
-            MessageMarkdown(answer.markdown, view.sources, streaming = streaming)
+            RegeneratableReply(enabled = canRegenerate && !streaming, settings = swipeSettings, onRegenerate = onRegenerate) {
+                MessageMarkdown(answer.markdown, view.sources, streaming = streaming)
+            }
         }
         if (waiting) WaitingDots(Modifier.padding(vertical = 8.dp))
         if (notice != null && noticeText != null) {
@@ -129,7 +134,8 @@ fun AssistantMessage(
                             }
                             when (notice.action) {
                                 NoticeAction.ApiKey -> TextButton(onClick = onChangeApiKey) { Text(stringResource(R.string.change_api_key)) }
-                                NoticeAction.TopUp -> TextButton(onClick = { uriHandler.openUri(TOP_UP_URL) }) { Text(stringResource(R.string.top_up)) }
+                                NoticeAction.TopUp -> TextButton(onClick = onChangeApiKey) { Text(stringResource(R.string.top_up)) }
+                                NoticeAction.NewChat -> TextButton(onClick = onNewChat, enabled = !busy) { Text(stringResource(R.string.new_chat)) }
                                 null -> Unit
                             }
                         }
@@ -145,7 +151,7 @@ fun AssistantMessage(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 modifier = Modifier.padding(top = 12.dp),
             ) {
-                Row(Modifier.padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                     DsIcon(R.drawable.ic_browse_outline_16, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(6.dp))
                     Text(
@@ -157,16 +163,17 @@ fun AssistantMessage(
             }
         }
         // 只剩错误卡片（复制、重试、分支、续写都没有）时不留一行空白操作栏
-        val hasActions = copyText.isNotEmpty() || !retryInCard || turn.siblingCount > 1 || (isLast && turn.canContinue)
+        val hasActions = copyText.isNotEmpty() || (canRegenerate && !retryInCard) || turn.siblingCount > 1 || (isLast && turn.canContinue)
         if (!streaming && hasActions) {
             // 操作栏：复制、版本切换、继续生成靠左，重新生成在最右
             Row(
-                Modifier.fillMaxWidth().padding(top = 8.dp).height(40.dp),
+                Modifier.fillMaxWidth().padding(top = 4.dp).height(40.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 if (copyText.isNotEmpty()) {
                     ActionIcon(R.drawable.ic_copy_outline_16, stringResource(R.string.copy), enabled = true) { copy(copyText) }
+                    ReadAloudButton(reading) { onReadAloud(copyText) }
                 }
                 BranchSwitcher(turn.siblingIndex, turn.siblingCount, enabled = !busy, onSelect = onSwitchBranch)
                 if (isLast && turn.canContinue) {
@@ -175,9 +182,9 @@ fun AssistantMessage(
                         Text(stringResource(R.string.continue_generating), style = MaterialTheme.typography.labelMedium)
                     }
                 }
-                if (!retryInCard) {
+                if (canRegenerate && !retryInCard) {
                     Spacer(Modifier.weight(1f))
-                    ActionIcon(R.drawable.ic_refresh_outline_16, stringResource(R.string.regenerate), enabled = !busy && !refused && turn.canRegenerate, onClick = onRegenerate)
+                    ActionIcon(R.drawable.ic_refresh_outline_16, stringResource(R.string.regenerate), enabled = true, onClick = onRegenerate)
                 }
             }
         }

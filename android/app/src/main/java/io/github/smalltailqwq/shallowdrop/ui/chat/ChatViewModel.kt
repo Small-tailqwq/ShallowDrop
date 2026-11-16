@@ -134,6 +134,10 @@ class ChatViewModel(
         settingsRepository.setSearch(!settingsRepository.settings.value.search)
     }
 
+    fun toggleAutoReadAloud() = viewModelScope.launch {
+        settingsRepository.setAutoReadAloud(!settingsRepository.settings.value.autoReadAloud)
+    }
+
     fun addAttachments(uris: List<Uri>, isImage: Boolean) {
         val target = sessionId.value
         for (uri in uris) {

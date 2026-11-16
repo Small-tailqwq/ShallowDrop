@@ -156,7 +156,16 @@ class ReplyTest {
                 is MessageParam.Assistant -> "A"
             }
         }
-        assertEquals(listOf("R:r1", "U", "A", "U", "A", "U", "A", "R:r2", "U", "A", "U"), kinds)
+        assertEquals(listOf("R:r1", "U", "A", "U", "A", "U", "A", "R:r2", "U", "A", "R:r2", "U"), kinds)
+    }
+
+    @Test
+    fun currentReminderRepeatedBeforeQuestionEvenWhenUnchanged() {
+        val history = listOf(user("q1"), reply(text("a"), reminder = "r1"))
+        val messages = toRequestMessages(history, user("now"), latestReminder = "r1")
+        assertEquals(MessageParam.LatestReminder("r1"), messages[0])
+        assertEquals(MessageParam.LatestReminder("r1"), messages[messages.size - 2])
+        assertTrue(messages.last() is MessageParam.User)
     }
 
     @Test
@@ -291,6 +300,7 @@ class ReplyTest {
         val zone = ZoneId.of("Asia/Shanghai")
         // 2026-11-15 00:30 上海时间 = 2026-11-14 16:30 UTC，日期按本地时区
         val now = LocalDate.of(2026, 11, 15).atTime(0, 30).atZone(zone).toInstant().toEpochMilli()
+        assertEquals("2026-11-15,Sunday,Seattle WA USA,App,English", createLatestReminder(ReminderLocale.EnUS, now, zone, "Seattle,WA\nUSA"))
         assertEquals("2026-11-15,星期日,,App,中文", createLatestReminder(ReminderLocale.ZhCN, now, zone))
         assertEquals("2026-11-14,Saturday,,App,English", createLatestReminder(ReminderLocale.EnUS, now, ZoneOffset.UTC))
         assertEquals(ReminderLocale.ZhCN, ReminderLocale.resolve(AppLocale.System, Locale.TRADITIONAL_CHINESE))

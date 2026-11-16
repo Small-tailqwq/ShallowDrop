@@ -1,5 +1,9 @@
 package io.github.smalltailqwq.shallowdrop.ui.chat
 
+import io.github.smalltailqwq.shallowdrop.ui.motion.pressFeedback
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -30,7 +34,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import io.github.smalltailqwq.shallowdrop.ui.motion.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -105,7 +109,7 @@ fun ChatInputBar(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         modifier = modifier.fillMaxWidth(),
     ) {
-        Column(Modifier.padding(top = 12.dp, bottom = 10.dp)) {
+        Column(Modifier.padding(top = 10.dp, bottom = 6.dp)) {
             if (state.draft.attachments.isNotEmpty()) {
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 12.dp),
@@ -117,7 +121,7 @@ fun ChatInputBar(
                     }
                 }
             }
-            Box(Modifier.padding(horizontal = 16.dp).heightIn(min = 44.dp)) {
+            Box(Modifier.padding(horizontal = 16.dp).heightIn(min = 36.dp)) {
                 val textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface)
                 if (state.draft.text.isEmpty()) {
                     Text(
@@ -137,8 +141,8 @@ fun ChatInputBar(
                 )
             }
             Row(
-                Modifier.fillMaxWidth().padding(start = 10.dp, end = 8.dp, top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                Modifier.fillMaxWidth().padding(start = 10.dp, end = 6.dp),
+                verticalAlignment = Alignment.Bottom,
             ) {
                 FlowRow(
                     modifier = Modifier.weight(1f),
@@ -149,7 +153,7 @@ fun ChatInputBar(
                     TogglePill(R.drawable.ic_globe_language_outline_14, stringResource(R.string.search_switch), state.settings.search, onToggleSearch)
                 }
                 Box {
-                    IconButton(onClick = { attachMenu = true }) {
+                    IconButton(onClick = { attachMenu = true }, modifier = Modifier.size(40.dp)) {
                         DsIcon(R.drawable.ic_paperclip_outline_16, contentDescription = stringResource(R.string.upload_file), modifier = Modifier.size(22.dp))
                     }
                     DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }) {
@@ -171,7 +175,7 @@ fun ChatInputBar(
                         )
                     }
                 }
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(2.dp))
                 if (state.generating) {
                     RoundAction(R.drawable.ic_stop_fill_16, stringResource(R.string.stop), enabled = true, onClick = onStop)
                 } else {
@@ -187,17 +191,22 @@ fun ChatInputBar(
 
 @Composable
 private fun TogglePill(@DrawableRes icon: Int, label: String, selected: Boolean, onClick: () -> Unit) {
+    val press = androidx.compose.runtime.remember { MutableInteractionSource() }
     val colors = MaterialTheme.colorScheme
+    val fill by animateColorAsState(if (selected) colors.primary.copy(alpha = 0.14f) else Color.Transparent, tween(120), label = "toggle-fill")
+    val foreground by animateColorAsState(if (selected) colors.primary else colors.onSurface, tween(120), label = "toggle-label")
     Surface(
+        modifier = Modifier.pressFeedback(press),
         onClick = onClick,
+        interactionSource = press,
         shape = RoundedCornerShape(50),
-        color = if (selected) colors.primary.copy(alpha = 0.14f) else Color.Transparent,
-        contentColor = if (selected) colors.primary else colors.onSurface,
+        color = fill,
+        contentColor = foreground,
         border = BorderStroke(1.dp, if (selected) colors.primary.copy(alpha = 0.3f) else colors.outline.copy(alpha = 0.6f)),
     ) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.padding(horizontal = 9.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
             DsIcon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(5.dp))
+            Spacer(Modifier.width(4.dp))
             Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
         }
     }
@@ -205,14 +214,16 @@ private fun TogglePill(@DrawableRes icon: Int, label: String, selected: Boolean,
 
 @Composable
 private fun RoundAction(@DrawableRes icon: Int, label: String, enabled: Boolean, onClick: () -> Unit) {
+    val press = androidx.compose.runtime.remember { MutableInteractionSource() }
     val colors = MaterialTheme.colorScheme
     Surface(
         onClick = onClick,
+        interactionSource = press,
         enabled = enabled,
         shape = CircleShape,
         color = if (enabled) colors.primary else colors.surfaceContainerHighest,
         contentColor = if (enabled) colors.onPrimary else colors.onSurfaceVariant.copy(alpha = 0.6f),
-        modifier = Modifier.size(36.dp),
+        modifier = Modifier.size(36.dp).pressFeedback(press),
     ) {
         Box(contentAlignment = Alignment.Center) {
             DsIcon(icon, contentDescription = label, modifier = Modifier.size(16.dp))

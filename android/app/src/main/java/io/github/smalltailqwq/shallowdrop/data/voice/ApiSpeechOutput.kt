@@ -38,7 +38,66 @@ interface PcmPlayer {
     /** 立即停止并丢弃缓冲 */
     fun flush()
 
+    /** 此刻正在播放的音频的响度，0..1；没有在播放时为 0。供界面动效使用 */
+    fun level(): Float = 0f
+
     fun release()
+}
+
+/**
+ * 记录写入的 PCM（16-bit 小端单声道）在各时间窗内的响度，按播放位置查询。
+ * 写入领先于播放（播放器有缓冲），所以不能直接用最新写入的响度，要按播放头所在的帧去取。
+ * 写入与查询可在不同线程。
+ */
+class PcmEnvelope(sampleRate: Int, windowMs: Int = 20, historyMs: Int = 4_000) {
+    private val window = (sampleRate * windowMs / 1000).coerceAtLeast(1)
+    private val slots = java.util.concurrent.atomic.AtomicIntegerArray(historyMs / windowMs)
+
+    @Volatile
+    private var frames = 0L
+    private var sum = 0.0
+    private var count = 0
+
+    fun write(data: ByteArray, offset: Int, length: Int) {
+        var i = offset
+        val end = offset + length - 1
+        var frame = frames
+        while (i < end) {
+            val sample = ((data[i].toInt() and 0xFF) or (data[i + 1].toInt() shl 8)) / 32768.0
+            sum += sample * sample
+            i += 2
+            frame++
+            if (++count == window) {
+                val rms = kotlin.math.sqrt(sum / window).toFloat()
+                slots.set((((frame - 1) / window) % slots.length()).toInt(), rms.toRawBits())
+                sum = 0.0
+                count = 0
+            }
+        }
+        frames = frame
+    }
+
+    /** 第 [frame] 帧所在时间窗的响度；尚未写到、或早已被覆盖的位置为 0 */
+    fun levelAt(frame: Long): Float {
+        val written = frames
+        if (frame < 0 || frame >= written) return 0f
+        val index = frame / window
+        if (written / window - index >= slots.length()) return 0f
+        val rms = Float.fromBits(slots.get((index % slots.length()).toInt()))
+        // 语音的均方根大多在满幅的 2%~20%：线性放大到 0..1，保留音节之间的起伏（开方会把起伏压平）
+        return (rms * LOUDNESS_GAIN).coerceAtMost(1f)
+    }
+
+    fun reset() {
+        frames = 0
+        sum = 0.0
+        count = 0
+        for (i in 0 until slots.length()) slots.set(i, 0)
+    }
+
+    private companion object {
+        const val LOUDNESS_GAIN = 5.5f
+    }
 }
 
 /**
@@ -64,6 +123,7 @@ class ApiSpeechOutput(
 
     /** 一次连续朗读的会话；stop 时整体丢弃，换新的 */
     private inner class Session(val key: String, val player: PcmPlayer) {
+        @Volatile var failure: Throwable? = null
         val scope = CoroutineScope(SupervisorJob() + io)
         val queue = Channel<Item>(Channel.UNLIMITED)
         val slots = Semaphore(prefetch)
@@ -113,7 +173,8 @@ class ApiSpeechOutput(
                     throw error
                 } catch (error: Exception) {
                     // 单段失败（网络、限流等）跳过，不中断后续朗读
-                    Log.w(TAG, "朗读失败：${item.text.take(20)}", error)
+                    if (failure == null) failure = error
+                    Log.w(TAG, "朗读失败", error)
                 } finally {
                     if (item.permit.getAndSet(false)) slots.release()
                     // stop 之后旧会话的收尾不能影响新会话的计数
@@ -137,6 +198,10 @@ class ApiSpeechOutput(
             }
         }
     }
+
+    override val failure: Throwable? get() = session?.failure
+
+    override val level: Float get() = player?.level() ?: 0f
 
     private val pending = MutableStateFlow(0)
     private var player: PcmPlayer? = null
@@ -223,7 +288,13 @@ class AudioTrackPlayer(
     @Volatile
     private var playing = false
 
+    private val envelope = PcmEnvelope(sampleRate)
+
+    override fun level(): Float =
+        if (playing) envelope.levelAt(runCatching { track.playbackHeadPosition.toLong() }.getOrDefault(-1L)) else 0f
+
     override fun write(data: ByteArray, offset: Int, length: Int) {
+        envelope.write(data, offset, length)
         // 暂停状态下写满缓冲会一直阻塞：放不下时先开播
         if (!playing && (written * 2 + length) > bufferBytes / 2) start()
         var done = 0
@@ -264,6 +335,7 @@ class AudioTrackPlayer(
         }
         playing = false
         written = 0
+        envelope.reset()
     }
 
     override fun release() {
@@ -284,6 +356,8 @@ class TeePcmPlayer(private val inner: PcmPlayer, file: java.io.File) : PcmPlayer
     override fun drain() = inner.drain()
 
     override fun flush() = inner.flush()
+
+    override fun level() = inner.level()
 
     override fun release() {
         runCatching { out.close() }

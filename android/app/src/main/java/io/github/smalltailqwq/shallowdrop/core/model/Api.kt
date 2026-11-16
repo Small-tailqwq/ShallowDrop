@@ -63,6 +63,8 @@ data class CreateMessageRequest(
     val title: Boolean = false,
     /** 是否引用了 Files API 文件；为 true 时需携带 anthropic-beta 头 */
     val hasFiles: Boolean = false,
+    /** 摘要请求限制输出长度；普通对话沿用服务端默认值。 */
+    val maxTokens: Int? = null,
 )
 
 // ---------- 流式事件 ----------

@@ -46,6 +46,7 @@ class UiDependencies(
     val verifyApiKey: suspend (String) -> Unit,
     /** 设置首次读取完成；之前不决定起始页面 */
     val settingsLoaded: StateFlow<Boolean>,
+    val locate: suspend (io.github.smalltailqwq.shallowdrop.core.model.LocationPreference, java.util.Locale) -> String,
     /** 语音对话的识别（无状态，可共用） */
     val speechInput: SpeechInput,
     /** 语音对话的合成；每次进入语音页新建，离开时释放 */
@@ -76,6 +77,7 @@ class UiDependencies(
                     exportLinkDownloader = (application as App).container.exportLinkDownloader,
                     verifyApiKey = ::fakeVerify,
                     settingsLoaded = settings.loaded,
+                    locate = (application as App).container.locationProvider::locate,
                     speechInput = speechInput(application, (application as App).container.speechApi, settings),
                     createSpeechOutput = { speechOutput(application, (application as App).container.speechApi, settings) },
                 )
@@ -89,6 +91,7 @@ class UiDependencies(
                 exportLinkDownloader = container.exportLinkDownloader,
                 verifyApiKey = { container.chatApi.verifyApiKey(it) },
                 settingsLoaded = settings.loaded,
+                locate = container.locationProvider::locate,
                 speechInput = speechInput(application, container.speechApi, settings),
                 createSpeechOutput = { speechOutput(application, container.speechApi, settings) },
                 attachmentFile = container.attachmentStore::file,

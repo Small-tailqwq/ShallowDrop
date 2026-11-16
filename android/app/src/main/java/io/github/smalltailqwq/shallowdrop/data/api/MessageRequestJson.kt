@@ -17,7 +17,7 @@ import kotlinx.serialization.json.putJsonObject
  * CreateMessageRequest → 请求体 JSON，与 src/services/api/types.ts 的 CreateMessageRequest
  * 及 client.ts streamMessage 中的 `{ ...body, stream: true }` 逐字段对应。
  * 字段顺序与 store.ts 构造请求时一致：model、system、messages、thinking、safety_check、tools、title、stream。
- * Web 版不传 max_tokens 等其他参数，这里同样不传。
+ * max_tokens 仅在请求显式指定输出长度时传入。
  */
 
 /** 扩展模式的安全检查等级，Web 版固定为 high */
@@ -39,6 +39,7 @@ internal fun CreateMessageRequest.toJson(json: Json): JsonObject = buildJsonObje
     )
     // 只有请求标题时才带 title，与 Web 版 `...(titleRequests.has(controller) ? { title: { enabled: true } } : {})` 一致
     if (title) putJsonObject("title") { put("enabled", true) }
+    maxTokens?.let { put("max_tokens", it) }
     put("stream", true)
 }
 

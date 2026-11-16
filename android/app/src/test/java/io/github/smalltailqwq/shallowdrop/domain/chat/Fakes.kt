@@ -128,15 +128,21 @@ class FakeSettings(initial: AppSettings = AppSettings(hasApiKey = true, locale =
 
     override suspend fun setApiKey(apiKey: String?) = Unit
 
+    override suspend fun acceptRechargeNotice() = Unit
+    override suspend fun setLocation(location: io.github.smalltailqwq.shallowdrop.core.model.LocationPreference) = state.update { it.copy(location = location) }
     override suspend fun setLocale(locale: AppLocale) = state.update { it.copy(locale = locale) }
 
     override suspend fun setTheme(theme: ThemePreference) = state.update { it.copy(theme = theme) }
+    override suspend fun setChatFontSize(size: io.github.smalltailqwq.shallowdrop.core.model.ChatFontSize) = state.update { it.copy(chatFontSize = size) }
+    override suspend fun setAutoReadAloud(enabled: Boolean) = state.update { it.copy(autoReadAloud = enabled) }
+    override suspend fun setReplySwipe(settings: io.github.smalltailqwq.shallowdrop.core.model.ReplySwipeSettings) = state.update { it.copy(replySwipe = settings) }
 
     override suspend fun setThinking(enabled: Boolean) = state.update { it.copy(thinking = enabled) }
 
     override suspend fun setSearch(enabled: Boolean) = state.update { it.copy(search = enabled) }
 
     override suspend fun setModel(model: ChatModel) = state.update { it.copy(model = model) }
+    override suspend fun setCompactionSettings(thresholds: io.github.smalltailqwq.shallowdrop.core.model.CompactionThresholds, enabled: Boolean) = state.update { it.copy(compactionThresholds = thresholds, compactionEnabled = enabled) }
 }
 
 // ---------- 事件构造 ----------

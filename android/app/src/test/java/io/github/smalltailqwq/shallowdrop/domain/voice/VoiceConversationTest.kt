@@ -102,6 +102,7 @@ class VoiceConversationTest {
     }
 
     private class FakeOutput : SpeechOutput {
+        override val failure: Throwable? = null
         var available = true
         val spoken = mutableListOf<String>()
         val idle = MutableStateFlow(true)

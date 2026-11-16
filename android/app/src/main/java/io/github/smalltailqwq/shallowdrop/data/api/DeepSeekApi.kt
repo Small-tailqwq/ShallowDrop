@@ -190,8 +190,8 @@ class DeepSeekApi(
             if (sse.event != "error") return null
             null
         }
-        errorBodyMessage(payload)?.let { throw apiException(ReplyErrorKind.Stream, it) }
-        if (sse.event == "error") throw apiException(ReplyErrorKind.Stream, sse.data)
+        errorBodyMessage(payload)?.let { throw apiException(ReplyErrorKind.Stream, it, scope = ErrorScope.Messages) }
+        if (sse.event == "error") throw apiException(ReplyErrorKind.Stream, sse.data, scope = ErrorScope.Messages)
         return events.read(payload)
     }
 

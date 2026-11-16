@@ -6,6 +6,8 @@ import io.github.smalltailqwq.shallowdrop.core.contract.ChatRepository
 import io.github.smalltailqwq.shallowdrop.core.contract.SendOptions
 import io.github.smalltailqwq.shallowdrop.core.contract.SettingsRepository
 import io.github.smalltailqwq.shallowdrop.core.model.AppLocale
+import io.github.smalltailqwq.shallowdrop.core.model.AppSettings
+import io.github.smalltailqwq.shallowdrop.core.model.TtsVoice
 import io.github.smalltailqwq.shallowdrop.domain.voice.SpeechInput
 import io.github.smalltailqwq.shallowdrop.domain.voice.SpeechOutput
 import io.github.smalltailqwq.shallowdrop.domain.voice.VoiceConversation
@@ -15,12 +17,13 @@ import java.util.Locale
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class VoiceViewModel(
     chat: ChatRepository,
     private val settings: SettingsRepository,
     input: SpeechInput,
-    output: SpeechOutput,
+    private val output: SpeechOutput,
     sessionId: String?,
 ) : ViewModel() {
     private val conversation = VoiceConversation(
@@ -42,7 +45,11 @@ class VoiceViewModel(
     private val mutedState = MutableStateFlow(false)
     val muted: StateFlow<Boolean> = mutedState.asStateFlow()
 
-    private val captionsState = MutableStateFlow(true)
+    /** 音色（决定光球外观）与智能搜索开关，可在语音页内调整 */
+    val settingsState: StateFlow<AppSettings> = settings.settings
+
+    /** 字幕默认收起，让光球居中 */
+    private val captionsState = MutableStateFlow(false)
     val captions: StateFlow<Boolean> = captionsState.asStateFlow()
 
     private val permissionDeniedState = MutableStateFlow(false)
@@ -62,6 +69,19 @@ class VoiceViewModel(
 
     fun toggleCaptions() {
         captionsState.value = !captionsState.value
+    }
+
+    /** 正在朗读的语音的响度，驱动光球 */
+    fun speechLevel(): Float = output.level
+
+    /** 换音色：下一句朗读起生效 */
+    fun setVoice(voice: TtsVoice) {
+        viewModelScope.launch { settings.setTtsVoice(voice) }
+    }
+
+    /** 智能搜索：下一轮提问起生效 */
+    fun setSearch(enabled: Boolean) {
+        viewModelScope.launch { settings.setSearch(enabled) }
     }
 
     /** 挂断并返回语音对话写入的会话 */

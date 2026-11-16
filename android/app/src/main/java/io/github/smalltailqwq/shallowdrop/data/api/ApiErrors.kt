@@ -11,6 +11,7 @@ import io.github.smalltailqwq.shallowdrop.core.model.ReplyErrorKind
 
 /** ApiException.code 的取值。字符串与 Web 版 errors.ts 中的标识一致，便于对照。 */
 object ApiErrorCodes {
+    const val CONTEXT_FULL = "contextFull"
     /** 401：回答中「API Key 无效或已被删除，请更换后重试」；校验 Key 时「API Key 无效，请检查后重试」 */
     const val UNAUTHORIZED = "unauthorized"
 
@@ -136,7 +137,10 @@ internal fun apiException(
 ): ApiException {
     val base = ApiException(kind, message, status)
     val refined = when (scope) {
-        ErrorScope.Messages -> fileErrorCode(base)
+        ErrorScope.Messages -> if ((status == 400 || kind == ReplyErrorKind.Stream) &&
+            (message.contains("maximum context length", ignoreCase = true) || message.contains("context_length_exceeded", ignoreCase = true))) {
+            ApiErrorCodes.CONTEXT_FULL
+        } else fileErrorCode(base)
         ErrorScope.Upload -> uploadErrorInfo(base)?.code
         ErrorScope.Default -> null
     }

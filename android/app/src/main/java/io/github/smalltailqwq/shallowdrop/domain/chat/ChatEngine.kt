@@ -12,6 +12,8 @@ import io.github.smalltailqwq.shallowdrop.core.contract.SessionStore
 import io.github.smalltailqwq.shallowdrop.core.contract.SettingsRepository
 import io.github.smalltailqwq.shallowdrop.core.contract.TurnView
 import io.github.smalltailqwq.shallowdrop.core.model.ApiException
+import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
+import io.github.smalltailqwq.shallowdrop.core.model.ContextSummary
 import io.github.smalltailqwq.shallowdrop.core.model.CreateMessageRequest
 import io.github.smalltailqwq.shallowdrop.core.model.FileAttachment
 import io.github.smalltailqwq.shallowdrop.core.model.Message
@@ -28,6 +30,8 @@ import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -66,12 +70,14 @@ import kotlinx.coroutines.withContext
  * - 同一会话同时只能有一个生成；生成中拒绝发送、编辑、重新生成、续写与切换分支。
  * - 远端文件不删：导入、编辑、重新生成都会复用同一附件，同一服务端文件可能被多个会话引用。
  */
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ChatEngine(
     private val api: ChatApi,
     private val store: SessionStore,
     private val attachments: AttachmentStore,
     private val settings: SettingsRepository,
     private val scope: CoroutineScope,
+    private val resolveLocation: suspend (io.github.smalltailqwq.shallowdrop.core.model.LocationPreference, Locale) -> String,
     private val clock: () -> Long = System::currentTimeMillis,
     private val idGenerator: () -> String = { UUID.randomUUID().toString() },
     /** latest_reminder 的时区 */
@@ -152,6 +158,60 @@ class ChatEngine(
     /** 本进程内已上传成功的附件：本地 id → file_id；失效时清除 */
     private val uploaded = ConcurrentHashMap<String, String>()
 
+    private val compaction = AsyncContextCompaction(scope, ::summarizeContext, ::installContextSummary,
+        thresholds = { settings.settings.value.compactionThresholds },
+        enabled = { settings.settings.value.compactionEnabled })
+
+    init {
+        scope.launch {
+            settings.settings.map { it.compactionEnabled }.distinctUntilChanged().collect { enabled ->
+                if (!enabled) compaction.clear()
+            }
+        }
+    }
+
+    private suspend fun installContextSummary(sessionId: String, anchorId: String, summary: ContextSummary): Boolean {
+        var installed = false
+        val updated = updateCached(sessionId) { session ->
+            val path = visibleMessages(session)
+            val index = path.indexOfFirst { it.id == anchorId }
+            installed = settings.settings.value.compactionEnabled && index >= 0 && contextFingerprint(path.take(index + 1)) == summary.sourceHash
+            if (!installed) session else session.copy(messages = session.messages.map { message ->
+                if (message.id == anchorId && message is Message.Assistant) message.copy(contextSummary = summary) else message
+            })
+        }
+        if (installed && updated != null) persistMessages(updated.second, setOf(anchorId))
+        return installed && updated != null
+    }
+
+    private suspend fun summarizeContext(sessionId: String, history: List<Message>, model: ChatModel): String {
+        val context = compactionContext(history, model)
+        val question = Message.User("context-compaction", clock(), content = COMPACTION_PROMPT)
+        val prepared = prepareFiles(sessionId, Request(context.history, question))
+        val messages = context.copy(history = prepared.history).messages(question)
+        val body = CreateMessageRequest(
+            model = model,
+            system = SYSTEM_PROMPT,
+            messages = messages,
+            thinking = false,
+            tools = emptyList(),
+            hasFiles = hasFileBlocks(messages),
+            maxTokens = COMPACTION_MAX_OUTPUT_TOKENS,
+        )
+        var reply = Message.Assistant("context-summary", clock(), status = ReplyStatus.Pending)
+        val indexes = HashMap<Int, Int>()
+        var finished = false
+        api.streamMessage(settings.apiKey().orEmpty(), body).collect { event ->
+            reply = applyEvent(reply, event, clock(), indexes)
+            if (event is MessageStreamEvent.MessageStop) finished = true
+        }
+        reply = settleReply(reply, ReplyStatus.Done, clock())
+        check(finished && reply.stopReason == StopReason.EndTurn && isUsableReply(reply)) {
+            "上下文摘要未完整生成，请重试。"
+        }
+        return replyText(reply)
+    }
+
     /** 正在生成回复的会话 id */
     val generating: StateFlow<Set<String>> = generatingIds.asStateFlow()
 
@@ -212,6 +272,7 @@ class ChatEngine(
                 siblingCount = siblingCount,
                 canRegenerate = message is Message.Assistant &&
                     !generating &&
+                    index == path.lastIndex &&
                     afterQuestion &&
                     message.stopReason != StopReason.Refusal,
                 canContinue = message is Message.Assistant &&
@@ -396,21 +457,23 @@ class ChatEngine(
         generations[sessionId]?.job?.cancel()
     }
 
-    /** 重新生成当前路径上的回答：在原问题下新增版本，不覆盖旧回答和后续对话。 */
+    /** 重新生成当前路径的最后一条回答，在原问题下新增版本。 */
     override suspend fun regenerate(sessionId: String, assistantMessageId: String, options: SendOptions) {
         opMutex.withLock {
             if (isGenerating(sessionId)) return
             val session = ensureLoaded(sessionId) ?: return
             val path = visibleMessages(session)
             val index = path.indexOfFirst { it.id == assistantMessageId }
+            if (index != path.lastIndex) return
             val question = path.getOrNull(index - 1) as? Message.User ?: return
-            if (path.getOrNull(index) !is Message.Assistant) return
+            val previous = path.getOrNull(index) as? Message.Assistant ?: return
+            if (previous.stopReason == StopReason.Refusal) return
             val reply = createReply(options)
             val (old, new) = updateCached(sessionId) {
                 appendBranch(it, question.id, listOf(reply)).copy(updatedAt = clock())
             } ?: return
             persistDiff(old, new)
-            startGeneration(sessionId, reply, Request(path.subList(0, index - 1), question), new.title.isEmpty())
+            startGeneration(sessionId, reply, Request(path.subList(0, index - 1), question, voice = options.voice), new.title.isEmpty())
         }
     }
 
@@ -431,7 +494,7 @@ class ChatEngine(
                 appendBranch(it, path.getOrNull(index - 1)?.id, listOf(question, reply)).copy(updatedAt = now)
             } ?: return
             persistDiff(old, new)
-            startGeneration(sessionId, reply, Request(path.subList(0, index), question), new.title.isEmpty())
+            startGeneration(sessionId, reply, Request(path.subList(0, index), question, voice = options.voice), new.title.isEmpty())
         }
     }
 
@@ -514,6 +577,7 @@ class ChatEngine(
     override suspend fun delete(sessionId: String) {
         opMutex.withLock {
             generations[sessionId]?.job?.cancelAndJoin()
+            compaction.cancel(sessionId)
             store.delete(sessionId)
             cache.update { it - sessionId }
         }
@@ -522,6 +586,7 @@ class ChatEngine(
     override suspend fun deleteAll() {
         opMutex.withLock {
             generations.values.toList().forEach { it.job.cancelAndJoin() }
+            compaction.clear()
             store.deleteAll()
             cache.value = emptyMap()
             uploaded.clear()
@@ -536,6 +601,7 @@ class ChatEngine(
         try {
             return opMutex.withLock {
                 generations.values.toList().forEach { it.job.cancelAndJoin() }
+                compaction.clear()
                 block()
             }
         } finally {
@@ -613,29 +679,35 @@ class ChatEngine(
             var attempt = 0
             while (true) {
                 // 附件补齐前出错属于上传失败，请求还没有发出
-                var preparing = true
+                var preparing = false
                 var receivedContent = false
                 try {
-                    val prepared = prepareFiles(sessionId, request)
+                    val model = initial.model ?: settings.settings.value.model
+                    val currentRequest = refresh(sessionId, request)
+                    val context = compaction.prepare(sessionId, currentRequest.history, currentRequest.question, model)
+                    preparing = true
+                    val prepared = prepareFiles(sessionId, currentRequest.copy(history = context.history))
                     preparing = false
                     // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
                     val latestReminder = if (prepared.prefix != null) {
                         prepared.prefix.latestReminder
                     } else {
-                        val locale = ReminderLocale.resolve(settings.settings.value.locale, systemLocale())
-                        createLatestReminder(locale, clock(), zone())
+                        val currentSettings = settings.settings.value
+                        val locale = ReminderLocale.resolve(currentSettings.locale, systemLocale())
+                        val location = settings.settings.map { it.location }.distinctUntilChanged()
+                            .mapLatest { resolveLocation(it, locale.javaLocale) }.first()
+                        createLatestReminder(locale, clock(), zone(), location)
                     }
-                    reply = reply.copy(latestReminder = latestReminder)
+                    reply = reply.copy(latestReminder = latestReminder, contextSummaryId = context.summary?.sourceHash)
                     writeReply(sessionId, reply, persist = true)
-                    val messages = toRequestMessages(
-                        prepared.history,
+                    val messages = context.copy(history = prepared.history).messages(
                         prepared.question,
                         prepared.prefix,
                         initial.thinking,
                         latestReminder,
                     )
                     val body = CreateMessageRequest(
-                        model = initial.model ?: settings.settings.value.model,
+                        model = model,
                         system = if (request.voice) {
                             SYSTEM_PROMPT + "\n\n" + voiceSystemPrompt(ReminderLocale.resolve(settings.settings.value.locale, systemLocale()))
                         } else {
@@ -723,6 +795,11 @@ class ChatEngine(
         } finally {
             withContext(NonCancellable) { writeReply(sessionId, reply, persist = true) }
         }
+        if (reply.status == ReplyStatus.Done && currentCoroutineContext().isActive) {
+            cache.value[sessionId]?.let { session ->
+                compaction.maybeStart(sessionId, visibleMessages(session), initial.model ?: settings.settings.value.model)
+            }
+        }
     }
 
     /** 首轮请求开启标题：正常结束且标题非空、会话仍无标题、未被手动重命名时写入。 */
@@ -763,10 +840,9 @@ class ChatEngine(
     private fun refresh(sessionId: String, request: Request): Request {
         val session = cache.value[sessionId] ?: return request
         val byId = session.messages.associateBy { it.id }
-        return Request(
+        return request.copy(
             history = request.history.map { byId[it.id] ?: it },
             question = byId[request.question.id] as? Message.User ?: request.question,
-            prefix = request.prefix,
         )
     }
 

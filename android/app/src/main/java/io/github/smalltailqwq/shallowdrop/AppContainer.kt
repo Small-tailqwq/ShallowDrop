@@ -54,6 +54,8 @@ class AppContainer(context: Context) {
 
     val settingsRepository: DataStoreSettingsRepository by lazy { DataStoreSettingsRepository(appContext) }
 
+    val locationProvider by lazy { io.github.smalltailqwq.shallowdrop.data.location.AndroidLocationProvider(appContext) }
+
     private val chatEngine: ChatEngine by lazy {
         ChatEngine(
             chatApi,
@@ -61,6 +63,7 @@ class AppContainer(context: Context) {
             attachmentStore,
             settingsRepository,
             appScope,
+            resolveLocation = locationProvider::locate,
             // 发送前原件取不到时，先尝试补完导入图片的恢复
             restoreAttachments = { archiveBackup.retryImageRestore() },
         )

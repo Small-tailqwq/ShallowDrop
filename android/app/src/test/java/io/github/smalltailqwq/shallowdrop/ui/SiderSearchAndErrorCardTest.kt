@@ -24,6 +24,7 @@ import io.github.smalltailqwq.shallowdrop.ui.sider.SessionSider
 import io.github.smalltailqwq.shallowdrop.ui.sider.filterSessionGroups
 import io.github.smalltailqwq.shallowdrop.ui.theme.ShallowDropTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -60,7 +61,7 @@ class SiderSearchAndErrorCardTest {
 
     private fun setSider(list: List<SessionGroup>, onSelect: (String) -> Unit = {}) = compose.setContent {
         ShallowDropTheme(darkTheme = false) {
-            Surface { SessionSider(list, "a", {}, onSelect, { _, _ -> }, {}, {}) }
+            Surface { SessionSider(list, "a", onSelect, { _, _ -> }, {}, {}) }
         }
     }
 
@@ -121,6 +122,36 @@ class SiderSearchAndErrorCardTest {
         compose.onNodeWithContentDescription("重新生成").performClick()
         assertEquals(1, retried)
         compose.onAllNodesWithText("重试").assertCountEquals(0)
+    }
+
+    @Test fun contextLimitOffersNewConversationInsteadOfRetry() {
+        var opened = false
+        val reply = Message.Assistant("full", 0, status = ReplyStatus.Error,
+            error = ReplyError(ReplyErrorKind.Http, "maximum context length exceeded", 400, "contextFull"))
+        compose.setContent { ShallowDropTheme(darkTheme = false) {
+            Surface { AssistantMessage(TurnView(reply, 0, 1, canRegenerate = true), true, false, false,
+                {}, {}, {}, {}, {}, onNewChat = { opened = true }) }
+        } }
+        compose.onNodeWithText("当前对话已达到上下文上限，请新建对话。").assertIsDisplayed()
+        compose.onAllNodesWithText("重试").assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("重新生成").assertCountEquals(0)
+        compose.onNodeWithText("开启新对话").performClick()
+        assertTrue(opened)
+    }
+
+    @Test
+    fun thinkingStartsCollapsedAndCanBeExpandedAndCollapsed() {
+        val reply = Message.Assistant("a", 0, status = ReplyStatus.Done, blocks = listOf(
+            ReplyBlock.Thinking("思考内容", elapsedSeconds = 2.0),
+            ReplyBlock.Text("正文内容"),
+        ))
+        setReply(TurnView(reply, 0, 1))
+        compose.onNodeWithText("正文内容").assertIsDisplayed()
+        compose.onAllNodesWithText("思考内容").assertCountEquals(0)
+        compose.onNodeWithText("已思考（用时 2 秒）").performClick()
+        compose.onNodeWithText("思考内容").assertIsDisplayed()
+        compose.onNodeWithText("已思考（用时 2 秒）").performClick()
+        compose.onAllNodesWithText("思考内容").assertCountEquals(0)
     }
 
     @Test

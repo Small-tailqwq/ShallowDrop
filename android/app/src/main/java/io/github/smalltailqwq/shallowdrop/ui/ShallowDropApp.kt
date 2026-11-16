@@ -1,5 +1,7 @@
 package io.github.smalltailqwq.shallowdrop.ui
 
+import io.github.smalltailqwq.shallowdrop.ui.motion.MotionEaseOut
+import io.github.smalltailqwq.shallowdrop.ui.motion.PAGE_MOTION_MS
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -54,13 +56,16 @@ data object SettingsGraph
 data object SettingsRoute
 
 @Serializable
+data object RechargeRoute
+
+@Serializable
 data object LicenseRoute
 
 /** 语音对话；sessionId 为 null 时首轮新建会话 */
 @Serializable
 data class VoiceRoute(val sessionId: String? = null)
 
-private const val DURATION = 220
+private const val DURATION = PAGE_MOTION_MS
 
 /** 根组件：主题 + 导航。onDarkThemeChange 用于同步系统栏图标颜色。 */
 @Composable
@@ -109,10 +114,10 @@ private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
     NavHost(
         navController = navController,
         startDestination = start,
-        enterTransition = { fadeIn(tween(DURATION)) + slideInHorizontally(tween(DURATION)) { it / 12 } },
-        exitTransition = { fadeOut(tween(DURATION)) },
-        popEnterTransition = { fadeIn(tween(DURATION)) },
-        popExitTransition = { fadeOut(tween(DURATION)) + slideOutHorizontally(tween(DURATION)) { it / 12 } },
+        enterTransition = { fadeIn(tween(DURATION, easing = MotionEaseOut)) + slideInHorizontally(tween(DURATION, easing = MotionEaseOut)) { it / 12 } },
+        exitTransition = { fadeOut(tween(DURATION, easing = MotionEaseOut)) },
+        popEnterTransition = { fadeIn(tween(DURATION, easing = MotionEaseOut)) },
+        popExitTransition = { fadeOut(tween(DURATION, easing = MotionEaseOut)) + slideOutHorizontally(tween(DURATION, easing = MotionEaseOut)) { it / 12 } },
     ) {
         composable<OnboardingRoute> {
             OnboardingScreen(
@@ -143,9 +148,13 @@ private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     onOpenLicense = { navController.navigate(LicenseRoute) },
+                    onOpenRecharge = { navController.navigate(RechargeRoute) { launchSingleTop = true } },
                     incomingImport = incomingImport,
                     onIncomingImportHandled = { deps.incomingImport.value = null },
                 )
+            }
+            composable<RechargeRoute> {
+                io.github.smalltailqwq.shallowdrop.ui.settings.RechargeScreen(onBack = { navController.popBackStack() })
             }
             composable<LicenseRoute> {
                 LicenseScreen(onBack = { navController.popBackStack() })

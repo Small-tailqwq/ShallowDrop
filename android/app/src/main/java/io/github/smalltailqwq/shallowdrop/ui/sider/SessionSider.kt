@@ -2,7 +2,7 @@ package io.github.smalltailqwq.shallowdrop.ui.sider
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import io.github.smalltailqwq.shallowdrop.ui.motion.pressClickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,15 +22,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
+import io.github.smalltailqwq.shallowdrop.ui.motion.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.IconButton
+import io.github.smalltailqwq.shallowdrop.ui.motion.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import io.github.smalltailqwq.shallowdrop.ui.motion.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -68,12 +68,11 @@ fun SessionGroupKey.label(): String = when (this) {
     is SessionGroupKey.Month -> "%04d-%02d".format(year, month)
 }
 
-/** 侧栏：顶部胶囊入口（开启新对话）、按时间分组的会话列表（长按重命名 / 删除）、底部设置。 */
+/** 侧栏：顶部搜索、按时间分组的会话列表（长按重命名 / 删除）、底部设置。 */
 @Composable
 fun SessionSider(
     groups: List<SessionGroup>?,
     activeId: String?,
-    onNewChat: () -> Unit,
     onSelect: (String) -> Unit,
     onRename: (String, String) -> Unit,
     onDelete: (String) -> Unit,
@@ -88,15 +87,8 @@ fun SessionSider(
     val visible = remember(groups, query, untitled) { filterSessionGroups(groups.orEmpty(), query, untitled) }
 
     Column(modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 12.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SearchField(query, onQueryChange = { query = it }, modifier = Modifier.weight(1f))
-            IconButton(onClick = onNewChat) {
-                DsIcon(R.drawable.ic_new_chat_outline_20, contentDescription = stringResource(R.string.new_chat), modifier = Modifier.size(22.dp))
-            }
-        }
+        SearchField(query, onQueryChange = { query = it },
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 4.dp))
         if (groups != null && visible.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Text(
@@ -200,7 +192,7 @@ private fun SettingsEntry(onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .pressClickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

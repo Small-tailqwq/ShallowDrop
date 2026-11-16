@@ -2,10 +2,10 @@ package io.github.smalltailqwq.shallowdrop.ui.common
 
 import android.app.Application
 import android.content.Context
-import androidx.compose.material3.AlertDialog
+import io.github.smalltailqwq.shallowdrop.ui.motion.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import io.github.smalltailqwq.shallowdrop.ui.motion.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource

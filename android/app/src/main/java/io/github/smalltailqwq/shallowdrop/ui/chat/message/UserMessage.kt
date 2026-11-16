@@ -13,11 +13,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
+import io.github.smalltailqwq.shallowdrop.ui.motion.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import io.github.smalltailqwq.shallowdrop.ui.motion.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,7 +41,7 @@ import io.github.smalltailqwq.shallowdrop.ui.components.AttachmentThumbnail
 import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
 import io.github.smalltailqwq.shallowdrop.ui.theme.LocalExtraColors
 
-/** 用户提问：附件 + 气泡；长按复制 / 编辑，编辑后作为兄弟节点重新发送。 */
+/** 用户提问：附件与气泡；长按复制、朗读或编辑，编辑后作为兄弟节点重新发送。 */
 @OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun UserMessage(
@@ -50,6 +50,8 @@ fun UserMessage(
     onEdit: (String) -> Unit,
     onSwitchBranch: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    reading: Boolean = false,
+    onReadAloud: (String) -> Unit = {},
 ) {
     val message = turn.message as Message.User
     var editing by rememberSaveable(message.id) { mutableStateOf(false) }
@@ -83,6 +85,7 @@ fun UserMessage(
                     value = draft,
                     onValueChange = { draft = it },
                     modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodyLarge,
                     maxLines = 8,
                     shape = RoundedCornerShape(16.dp),
                 )
@@ -127,6 +130,17 @@ fun UserMessage(
                         onClick = {
                             menu = false
                             copy(message.content)
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(if (reading) R.string.stop_reading else R.string.read_aloud)) },
+                        leadingIcon = {
+                            DsIcon(if (reading) R.drawable.ic_stop_circle_outline_20 else R.drawable.ic_speaker_outline_20,
+                                contentDescription = null, modifier = Modifier.size(20.dp))
+                        },
+                        onClick = {
+                            menu = false
+                            onReadAloud(message.content)
                         },
                     )
                     DropdownMenuItem(

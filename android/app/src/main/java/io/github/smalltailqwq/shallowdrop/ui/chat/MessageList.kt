@@ -27,6 +27,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import io.github.smalltailqwq.shallowdrop.core.contract.ConversationState
 import io.github.smalltailqwq.shallowdrop.core.model.Message
+import io.github.smalltailqwq.shallowdrop.core.model.ReplySwipeSettings
 import io.github.smalltailqwq.shallowdrop.ui.chat.message.AssistantMessage
 import io.github.smalltailqwq.shallowdrop.ui.chat.message.UserMessage
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.Source
@@ -74,6 +75,10 @@ fun MessageList(
     follow: FollowState,
     actions: MessageActions,
     modifier: Modifier = Modifier,
+    readingId: String? = null,
+    onReadAloud: (String, String) -> Unit = { _, _ -> },
+    replySwipe: ReplySwipeSettings = ReplySwipeSettings(),
+    onNewChat: () -> Unit = {},
 ) {
     val turns = conversation.turns
     val busy = conversation.generating
@@ -110,6 +115,8 @@ fun MessageList(
                     is Message.User -> UserMessage(
                         turn = turn,
                         busy = busy,
+                        reading = readingId == message.id,
+                        onReadAloud = { text -> onReadAloud(message.id, text) },
                         onEdit = { text ->
                             follow.following = true
                             actions.onEdit(message.id, text)
@@ -119,13 +126,16 @@ fun MessageList(
                             follow.following = false
                             actions.onSwitchBranch(message.id, i)
                         },
-                        modifier = itemModifier.padding(top = 16.dp, bottom = 8.dp),
+                        modifier = itemModifier.padding(top = 20.dp, bottom = 20.dp),
                     )
                     is Message.Assistant -> AssistantMessage(
                         turn = turn,
                         isLast = index == turns.lastIndex,
                         streaming = busy && index == turns.lastIndex,
                         busy = busy,
+                        swipeSettings = replySwipe,
+                        reading = readingId == message.id,
+                        onReadAloud = { text -> onReadAloud(message.id, text) },
                         onRegenerate = {
                             follow.following = true
                             actions.onRegenerate(message.id)
@@ -140,6 +150,7 @@ fun MessageList(
                         },
                         onOpenSources = actions.onOpenSources,
                         onChangeApiKey = actions.onChangeApiKey,
+                        onNewChat = onNewChat,
                         modifier = itemModifier,
                     )
                 }

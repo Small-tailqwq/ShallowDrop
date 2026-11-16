@@ -19,6 +19,8 @@ import io.github.smalltailqwq.shallowdrop.core.model.RequestTool
 import io.github.smalltailqwq.shallowdrop.core.model.Session
 import io.github.smalltailqwq.shallowdrop.core.model.StopReason
 import io.github.smalltailqwq.shallowdrop.core.model.UserContentParam
+import io.github.smalltailqwq.shallowdrop.core.model.LocationMode
+import io.github.smalltailqwq.shallowdrop.core.model.LocationPreference
 import java.time.ZoneOffset
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
@@ -58,6 +60,7 @@ class ChatEngineTest {
     private val store = FakeSessionStore()
     private val settings = FakeSettings()
     private lateinit var attachments: FakeAttachmentStore
+    private var locate: suspend (LocationPreference, Locale) -> String = { preference, _ -> if (preference.mode == LocationMode.Custom) preference.custom else "" }
     private var ids = 0
     private val options = SendOptions(thinking = false, search = false, model = ChatModel.Flash)
 
@@ -77,6 +80,7 @@ class ChatEngineTest {
             store = store,
             attachments = attachments,
             settings = settings,
+            resolveLocation = { preference, locale -> locate(preference, locale) },
             scope = scope,
             clock = { testScheduler.currentTime },
             idGenerator = { "id${ids++}" },
@@ -99,6 +103,54 @@ class ChatEngineTest {
     private fun Message.Assistant.text() = replyText(this)
 
     private fun MessageParam.User.text() = content.filterIsInstance<UserContentParam.Text>().joinToString("") { it.text }
+
+    @Test
+    fun locationFollowsPreferencesAcrossTextAndVoiceTurnsAndCanBeDisabled() = engineTest { engine ->
+        settings.setLocation(LocationPreference(LocationMode.Custom, "浙江省杭州市"))
+        val id = engine.send(null, "今天天气如何", emptyList(), options.copy(search = true))
+        advanceUntilIdle()
+        assertEquals("1970-01-01,星期四,浙江省杭州市,App,中文", lastReply(id).latestReminder)
+        assertTrue(api.requests.last().tools.contains(RequestTool.WebSearch))
+        locate = { preference, _ -> if (preference.mode == LocationMode.Network) "中国 上海市" else "" }
+        settings.setLocation(LocationPreference(LocationMode.Network))
+        engine.send(id, "现在呢", emptyList(), options.copy(voice = true))
+        advanceUntilIdle()
+        assertEquals("1970-01-01,星期四,中国 上海市,App,中文", lastReply(id).latestReminder)
+        settings.setLocation(LocationPreference())
+        engine.send(id, "关闭位置", emptyList(), options)
+        advanceUntilIdle()
+        assertEquals("1970-01-01,星期四,,App,中文", lastReply(id).latestReminder)
+        assertEquals(MessageParam.LatestReminder(lastReply(id).latestReminder!!), api.requests.last().messages.filterIsInstance<MessageParam.LatestReminder>().last())
+    }
+
+    @Test
+    fun changingLocationModeCancelsPendingLookup() = engineTest { engine ->
+        var cancelled = false
+        locate = { preference, _ ->
+            if (preference.mode == LocationMode.Gps) {
+                try { awaitCancellation() } finally { cancelled = true }
+            } else ""
+        }
+        settings.setLocation(LocationPreference(LocationMode.Gps))
+        val id = engine.send(null, "今天天气如何", emptyList(), options)
+        runCurrent()
+        assertTrue(api.requests.isEmpty())
+        settings.setLocation(LocationPreference())
+        advanceUntilIdle()
+        assertTrue(cancelled)
+        assertEquals("1970-01-01,星期四,,App,中文", lastReply(id).latestReminder)
+    }
+
+    @Test
+    fun locationFailureIsShownBeforeSendingChat() = engineTest { engine ->
+        locate = { _, _ -> throw java.io.IOException("未能取得 GPS 位置") }
+        settings.setLocation(LocationPreference(LocationMode.Gps))
+        val id = engine.send(null, "天气", emptyList(), options)
+        advanceUntilIdle()
+        assertTrue(api.requests.isEmpty())
+        assertEquals(ReplyStatus.Error, lastReply(id).status)
+        assertEquals("未能取得 GPS 位置", lastReply(id).error?.message)
+    }
 
     @Test
     fun voiceTurnAppendsVoicePromptOnlyForThatRequest() = engineTest { engine ->
@@ -156,9 +208,9 @@ class ChatEngineTest {
         assertFalse(request.title)
         assertTrue(request.thinking)
         assertEquals(ChatModel.V4Pro, request.model)
-        // 快照相同只插入一次
+        // 本轮快照即使与历史相同也紧贴本轮提问
         assertEquals(
-            listOf("R", "U", "A", "U"),
+            listOf("R", "U", "A", "R", "U"),
             request.messages.map {
                 when (it) {
                     is MessageParam.LatestReminder -> "R"
@@ -221,6 +273,25 @@ class ChatEngineTest {
 
         engine.switchBranch(id, path[0].id, 0)
         assertEquals(4, visibleMessages(stored(id)).size)
+    }
+
+    @Test
+    fun onlyLastReplyCanRegenerate() = engineTest { engine ->
+        api.scripts += { textReply("第一条回复") }
+        val id = engine.send(null, "第一个问题", emptyList(), options)
+        advanceUntilIdle()
+        val historical = lastReply(id)
+        api.scripts += { textReply("第二条回复") }
+        engine.send(id, "第二个问题", emptyList(), options)
+        advanceUntilIdle()
+        val before = stored(id)
+        val state = engine.state(id)
+        assertFalse(state.turns.first { it.message.id == historical.id }.canRegenerate)
+        assertTrue(state.turns.last().canRegenerate)
+        engine.regenerate(id, historical.id, options)
+        advanceUntilIdle()
+        assertEquals(before, stored(id))
+        assertEquals(2, api.requests.size)
     }
 
     @Test

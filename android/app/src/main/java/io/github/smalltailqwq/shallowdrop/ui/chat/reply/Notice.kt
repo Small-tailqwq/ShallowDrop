@@ -25,7 +25,7 @@ sealed interface UiText {
     data class Format(@param:StringRes val id: Int, val arg: String) : UiText
 }
 
-enum class NoticeAction { ApiKey, TopUp }
+enum class NoticeAction { ApiKey, TopUp, NewChat }
 
 data class Notice(
     val text: UiText,
@@ -50,6 +50,7 @@ private fun statusMessage(status: Int?): Int? = when {
  */
 @StringRes
 fun errorCodeMessage(code: String?): Int? = when (code) {
+    "contextFull" -> R.string.reply_context_full
     "unauthorized", "replyInvalidApiKey", "apiKeyInvalidRetry" -> R.string.reply_invalid_api_key
     "insufficientBalance", "replyInsufficientBalance" -> R.string.reply_insufficient_balance
     "rateLimited", "replyRateLimited" -> R.string.reply_rate_limited
@@ -67,6 +68,7 @@ private fun templateText(reply: Message.Assistant) =
 fun describeReply(reply: Message.Assistant): Notice? {
     val error = reply.error
     if (reply.status == ReplyStatus.Error && error != null) {
+        if (error.code == "contextFull") return Notice(UiText.Res(R.string.reply_context_full), action = NoticeAction.NewChat)
         val message: UiText? = errorCodeMessage(error.code)?.let { UiText.Res(it) }
             ?: error.message.takeIf { it.isNotEmpty() }?.let { UiText.Raw(it) }
         if (error.kind == ReplyErrorKind.Upload) {

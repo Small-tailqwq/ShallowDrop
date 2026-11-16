@@ -2,6 +2,7 @@ package io.github.smalltailqwq.shallowdrop.data.db
 
 import android.net.Uri
 import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
+import io.github.smalltailqwq.shallowdrop.core.model.ContextSummary
 import io.github.smalltailqwq.shallowdrop.core.model.FileAttachment
 import io.github.smalltailqwq.shallowdrop.core.model.Message
 import io.github.smalltailqwq.shallowdrop.core.model.ReplyBlock
@@ -64,6 +65,18 @@ class RoomSessionStoreTest {
             ),
         ),
     )
+
+    @Test
+    fun contextSummarySurvivesMessageStorage() = runTest {
+        val original = session("s1", 100)
+        val reply = (original.messages.last() as Message.Assistant).copy(
+            contextSummary = ContextSummary("prefix-sha256", ChatModel.V4Pro, "已确认的上下文摘要"),
+            contextSummaryId = "previous-prefix-sha256",
+        )
+        store.save(original)
+        store.upsertMessage("s1", reply, 100, original.rootMessageId)
+        assertEquals(reply, store.load("s1")!!.messages.last())
+    }
 
     @Test
     fun saveLoadAndSummaries() = runTest {

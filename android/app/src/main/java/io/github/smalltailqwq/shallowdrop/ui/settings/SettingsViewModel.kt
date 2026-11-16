@@ -13,10 +13,11 @@ import io.github.smalltailqwq.shallowdrop.core.contract.HistoryException
 import io.github.smalltailqwq.shallowdrop.core.contract.ImportProgress
 import io.github.smalltailqwq.shallowdrop.core.contract.ImportResult
 import io.github.smalltailqwq.shallowdrop.core.contract.SettingsRepository
+import io.github.smalltailqwq.shallowdrop.core.model.LocationPreference
 import io.github.smalltailqwq.shallowdrop.core.model.AppLocale
 import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
+import io.github.smalltailqwq.shallowdrop.core.model.CompactionThresholds
 import io.github.smalltailqwq.shallowdrop.core.model.ThemePreference
-import io.github.smalltailqwq.shallowdrop.core.model.TtsVoice
 import io.github.smalltailqwq.shallowdrop.ui.UiDependencies
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.UiText
 import io.github.smalltailqwq.shallowdrop.ui.common.ApiKeyForm
@@ -80,13 +81,66 @@ class SettingsViewModel(
         }
     }
 
+    val acceptingRecharge = MutableStateFlow(false)
+
+    fun acceptRechargeNotice(onAccepted: () -> Unit) {
+        if (acceptingRecharge.value) return
+        acceptingRecharge.value = true
+        viewModelScope.launch {
+            try {
+                settingsRepository.acceptRechargeNotice()
+                onAccepted()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                eventChannel.trySend(UiText.Res(R.string.recharge_consent_failed))
+            } finally {
+                acceptingRecharge.value = false
+            }
+        }
+    }
+
+    fun setLocation(location: LocationPreference, onSaved: () -> Unit) = viewModelScope.launch {
+        try {
+            settingsRepository.setLocation(location)
+            onSaved()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            eventChannel.trySend(UiText.Res(R.string.location_save_failed))
+        }
+    }
+
     fun setLocale(locale: AppLocale) = viewModelScope.launch { settingsRepository.setLocale(locale) }
 
     fun setTheme(theme: ThemePreference) = viewModelScope.launch { settingsRepository.setTheme(theme) }
 
+    fun setChatFontSize(size: io.github.smalltailqwq.shallowdrop.core.model.ChatFontSize) =
+        viewModelScope.launch { settingsRepository.setChatFontSize(size) }
+
+    fun setReplySwipe(settings: io.github.smalltailqwq.shallowdrop.core.model.ReplySwipeSettings) =
+        viewModelScope.launch { settingsRepository.setReplySwipe(settings) }
+
     fun setModel(model: ChatModel) = viewModelScope.launch { settingsRepository.setModel(model) }
 
-    fun setTtsVoice(voice: TtsVoice) = viewModelScope.launch { settingsRepository.setTtsVoice(voice) }
+    val savingCompaction = MutableStateFlow(false)
+
+    fun setCompactionSettings(thresholds: CompactionThresholds, enabled: Boolean, onSaved: () -> Unit) {
+        if (savingCompaction.value) return
+        savingCompaction.value = true
+        viewModelScope.launch {
+            try {
+                settingsRepository.setCompactionSettings(thresholds, enabled)
+                onSaved()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                eventChannel.trySend(UiText.Res(R.string.compaction_save_failed))
+            } finally {
+                savingCompaction.value = false
+            }
+        }
+    }
 
     private fun runTask(initial: DataTask, block: suspend () -> UiText) {
         if (taskState.value != null) return

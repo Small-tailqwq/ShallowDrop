@@ -1,0 +1,16 @@
+OpenAI Codex
+Copyright 2025 OpenAI
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Source: https://github.com/openai/codex
+Revision: 95946faafcd8f068e28610e8ae6a4c03060c1448
+Files: codex-rs/core/src/session/async_compaction.rs
+       codex-rs/core/src/compact_remote_v2_installation.rs
+
+ShallowDrop adapts the asynchronous compaction scheduling and prefix-validation
+logic to Kotlin. DeepSeek Messages text summaries replace Codex remote V2
+compaction items. Original messages remain stored; summary checkpoints are
+stored on the final summarized assistant message.
+
+Modified implementation:
+io/github/smalltailqwq/shallowdrop/domain/chat/AsyncContextCompaction.kt

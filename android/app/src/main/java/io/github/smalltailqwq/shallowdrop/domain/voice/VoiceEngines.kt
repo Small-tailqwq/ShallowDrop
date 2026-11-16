@@ -67,6 +67,12 @@ interface SpeechInput {
 }
 
 interface SpeechOutput {
+    /** 当前朗读队列发生的首个错误；stop 后清除。 */
+    val failure: Throwable?
+
+    /** 此刻正在播放的语音的响度，0..1；没有在播放时为 0。供界面动效使用 */
+    val level: Float get() = 0f
+
     /** 初始化引擎并返回是否可用；可重复调用 */
     suspend fun prepare(languageTag: String): Boolean
 

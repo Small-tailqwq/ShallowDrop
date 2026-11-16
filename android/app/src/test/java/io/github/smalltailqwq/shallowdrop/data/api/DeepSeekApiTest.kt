@@ -71,6 +71,15 @@ class DeepSeekApiTest {
     private suspend fun collect(request: CreateMessageRequest = simpleRequest) =
         withTimeout(10_000) { api.streamMessage("sk-test", request).toList() }
 
+    @Test fun contextLimitIsRecognizedForHttpAndStreamErrors() = runBlocking {
+        server.enqueue(MockResponse.Builder().code(400).body("""{"error":{"message":"This model's maximum context length is 1048576 tokens. However, you requested 1048600 tokens."}}""").build())
+        assertEquals(ApiErrorCodes.CONTEXT_FULL, expectApiError { collect() }.code)
+        server.enqueue(sse(frame("error", """{"type":"error","error":{"message":"context_length_exceeded"}}""")))
+        assertEquals(ApiErrorCodes.CONTEXT_FULL, expectApiError { collect() }.code)
+        server.enqueue(MockResponse.Builder().code(400).body("""{"error":{"message":"max_tokens must be positive"}}""").build())
+        assertEquals(ApiErrorCodes.OTHER, expectApiError { collect() }.code)
+    }
+
     private inline fun expectApiError(block: () -> Unit): ApiException {
         try {
             block()
@@ -316,6 +325,14 @@ class DeepSeekApiTest {
             "title":{"enabled":true},"stream":true}
         """.trimIndent().replace("\n", "")
         assertEquals(expected, recorded.body!!.utf8())
+    }
+
+    @Test
+    fun summaryRequestSpecifiesOutputLimit() = runBlocking {
+        server.enqueue(sse(frame("message_stop", """{"type":"message_stop"}""")))
+        collect(simpleRequest.copy(maxTokens = 8192))
+        val body = Json.parseToJsonElement(server.takeRequest().body!!.utf8()).jsonObject
+        assertEquals("8192", body["max_tokens"]!!.jsonPrimitive.content)
     }
 
     @Test

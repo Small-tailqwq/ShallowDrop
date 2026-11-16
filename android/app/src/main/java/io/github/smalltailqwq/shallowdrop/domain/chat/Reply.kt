@@ -351,7 +351,7 @@ fun toRequestMessages(
 ): List<MessageParam> {
     val messages = ArrayList<MessageParam>()
     var previousReminder: String? = null
-    // 仅在当前分支首次出现或内容变化时插入快照；缺少快照的消息保持原有内容。
+    // 历史轮次仅在当前分支首次出现或内容变化时插入快照；缺少快照的消息保持原有内容。
     fun appendReminder(reminder: String?) {
         if (!reminder.isNullOrEmpty() && reminder != previousReminder) {
             messages.add(MessageParam.LatestReminder(reminder))
@@ -365,7 +365,9 @@ fun toRequestMessages(
         messages.add(toUserParam(user))
         messages.add(toAssistantParam(reply))
     }
-    appendReminder(latestReminder)
+    // 本轮快照始终紧贴本轮提问，即使与历史快照相同（与 Web 版去重不同）：
+    // 深度思考模式下模型不会回看排在早期轮次前的快照，日期、位置会被当成未知。
+    if (!latestReminder.isNullOrEmpty()) messages.add(MessageParam.LatestReminder(latestReminder))
     messages.add(toUserParam(question))
     if (prefix != null && prefix.prefix) {
         val assistant = toAssistantParam(prefix, prefix = true, thinking = thinking)

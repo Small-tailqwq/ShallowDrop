@@ -45,6 +45,43 @@ class MarkdownParserTest {
     }
 
     @Test
+    fun strongWithSymbolsCanTouchChineseText() {
+        for (content in listOf("10℃ ~ 20℃", "10°C ~ 20°C", "（重点）", "“重点”", "50%", "¥100")) {
+            assertEquals(content, Paragraph(listOf(Text("前"), Strong(listOf(Text(content))), Text("后"))), single("前**$content**后"))
+        }
+    }
+
+    @Test
+    fun chineseStrongPreservesNestedInlineFormatting() {
+        assertEquals(
+            Paragraph(listOf(Text("前"), Strong(listOf(Text("（"), Code("**字面值**"), Text("与"), Emphasis(listOf(Text("重点"))), Text("）"))), Text("后"))),
+            single("前**（`**字面值**`与*重点*）**后"),
+        )
+    }
+
+    @Test
+    fun escapedStrongMarkersAndCodeRemainLiteral() {
+        assertEquals(Paragraph(listOf(Text("前**（字面值）**后"))), single("前\\**（字面值）\\**后"))
+        assertEquals(Paragraph(listOf(Code("前**（字面值）**后"))), single("`前**（字面值）**后`"))
+    }
+
+    @Test
+    fun chineseStrongKeepsReferenceLinksAndMath() {
+        assertEquals(
+            Paragraph(listOf(Text("前"), Strong(listOf(Text("（"), Link("https://example.com", listOf(Text("站点"))), Text("与"), MdInline.Math("x^2", false), Text("）"))), Text("后"))),
+            parse("[站点]: https://example.com\n\n前**（[站点]与\$x^2\$）**后").last(),
+        )
+    }
+
+    @Test
+    fun adjacentStandardAndChineseStrongRemainSeparate() {
+        assertEquals(Paragraph(listOf(Strong(listOf(Text("普通"))), Text("前"), Strong(listOf(Text("（重点）"))), Text("后"))),
+            single("**普通**前**（重点）**后"))
+        assertEquals(Paragraph(listOf(Text("东京是"), Strong(listOf(Text("阴天"))), Text("，气温在"), Strong(listOf(Text("10℃到17℃"))), Text("之间"))),
+            single("东京是**阴天**，气温在**10℃到17℃**之间"))
+    }
+
+    @Test
     fun emptyHeadingDropped() {
         assertTrue(parse("#").isEmpty())
     }

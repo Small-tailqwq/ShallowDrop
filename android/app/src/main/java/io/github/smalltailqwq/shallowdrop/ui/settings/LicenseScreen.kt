@@ -19,19 +19,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.ui.components.BackButton
 
-/** MIT 许可全文（res/raw/license.txt，复制自仓库根 LICENSE）。 */
+/** 项目许可与后台压缩实现的第三方许可。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LicenseScreen(onBack: () -> Unit) {
     val resources = LocalResources.current
-    val text = remember(resources) {
-        resources.openRawResource(R.raw.license).bufferedReader().use { it.readText() }
+    val assets = LocalContext.current.assets
+    val text = remember(resources, assets) {
+        resources.openRawResource(R.raw.license).bufferedReader().use { it.readText() } +
+            "\n\n" + assets.open("third-party/codex/NOTICE").bufferedReader().use { it.readText() } +
+            "\n\n" + assets.open("third-party/codex/LICENSE").bufferedReader().use { it.readText() }
     }
     Scaffold(
         topBar = {

@@ -54,7 +54,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * 顶栏的当前模型：可见、两步可换、切换后用于之后的发送；窄屏大字号下不被裁切、不挤掉两侧按钮。
+ * 顶栏标题可展开模型列表，切换后用于之后的发送；窄屏大字号下不挤掉两侧按钮。
  * Robolectric 合成界面（非设备），截图写入 build/ui-review-topbar。
  */
 @RunWith(RobolectricTestRunner::class)
@@ -92,11 +92,17 @@ class ChatTopTitleTest {
         override val settings: StateFlow<AppSettings> = state
         override suspend fun apiKey(): String? = "k"
         override suspend fun setApiKey(apiKey: String?) = Unit
-        override suspend fun setLocale(locale: AppLocale) = Unit
+        override suspend fun acceptRechargeNotice() = Unit
+        override suspend fun setLocation(location: io.github.smalltailqwq.shallowdrop.core.model.LocationPreference) = Unit
+    override suspend fun setLocale(locale: AppLocale) = Unit
         override suspend fun setTheme(theme: ThemePreference) = Unit
+        override suspend fun setChatFontSize(size: io.github.smalltailqwq.shallowdrop.core.model.ChatFontSize) = state.update { it.copy(chatFontSize = size) }
+        override suspend fun setAutoReadAloud(enabled: Boolean) = state.update { it.copy(autoReadAloud = enabled) }
+        override suspend fun setReplySwipe(settings: io.github.smalltailqwq.shallowdrop.core.model.ReplySwipeSettings) = state.update { it.copy(replySwipe = settings) }
         override suspend fun setThinking(enabled: Boolean) = Unit
         override suspend fun setSearch(enabled: Boolean) = Unit
         override suspend fun setModel(model: ChatModel) = state.update { it.copy(model = model) }
+        override suspend fun setCompactionSettings(thresholds: io.github.smalltailqwq.shallowdrop.core.model.CompactionThresholds, enabled: Boolean) = state.update { it.copy(compactionThresholds = thresholds, compactionEnabled = enabled) }
     }
 
     private val longTitle = "帮我看看这段 Kotlin 协程代码为什么会在取消之后还继续写数据库"
@@ -142,8 +148,12 @@ class ChatTopTitleTest {
         val menu = compose.onNodeWithContentDescription("打开边栏").assertIsDisplayed().getUnclippedBoundsInRoot()
         val newChat = onScreen(hasContentDescription("开启新对话")).assertIsDisplayed().getUnclippedBoundsInRoot()
         val model = compose.onNodeWithContentDescription("模型: ${settings.state.value.model.id}").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val phone = compose.onNodeWithContentDescription("语音对话").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val automatic = compose.onNodeWithContentDescription("开启自动朗读").assertIsDisplayed().getUnclippedBoundsInRoot()
         assertTrue("模型区与菜单重叠", model.left >= menu.right)
-        assertTrue("模型区与新对话重叠", model.right <= newChat.left)
+        assertTrue("模型区与电话重叠", model.right <= phone.left)
+        assertTrue("电话与自动朗读重叠", phone.right <= automatic.left)
+        assertTrue("自动朗读与新对话重叠", automatic.right <= newChat.left)
         assertTrue("新对话按钮超出屏幕", newChat.right <= screenWidth.dp)
         assertTrue("标题区超出顶栏高度: $model", model.top >= 0.dp && model.bottom <= barHeight.dp)
         assertTrue("点击区域过小: $model", model.bottom - model.top >= 48.dp)
@@ -176,10 +186,9 @@ class ChatTopTitleTest {
     }
 
     @Test
-    fun conversationShowsTitleAndModelAndRegenerateUsesSwitchedModel() {
+    fun conversationShowsTitleAndRegenerateUsesSwitchedModel() {
         val (repo, _) = show("周末阅读计划", dark = true)
         onScreen(hasText("周末阅读计划")).assertIsDisplayed()
-        compose.onNodeWithText("deepseek-flash").assertIsDisplayed()
         assertTopBarFits(360)
         shot("conversation-dark")
 
@@ -195,10 +204,21 @@ class ChatTopTitleTest {
     fun choosingCurrentModelChangesNothing() {
         show("周末阅读计划")
         compose.onNodeWithContentDescription("模型: deepseek-flash").performClick()
-        compose.onAllNodesWithText("deepseek-flash")[1].performClick()
+        compose.onNodeWithText("deepseek-flash").performClick()
         compose.waitForIdle()
         assertEquals(ChatModel.Flash, settings.state.value.model)
         compose.onAllNodesWithText("deepseek-v4-pro").assertCountEquals(0)
+    }
+
+    @Test
+    fun automaticReadingToggleUpdatesSavedPreference() {
+        show("周末阅读计划")
+        compose.onNodeWithContentDescription("开启自动朗读").performClick()
+        compose.waitForIdle()
+        assertTrue(settings.state.value.autoReadAloud)
+        compose.onNodeWithContentDescription("关闭自动朗读").performClick()
+        compose.waitForIdle()
+        assertTrue(!settings.state.value.autoReadAloud)
     }
 
     @Test
@@ -207,7 +227,7 @@ class ChatTopTitleTest {
         settings.state.update { it.copy(model = ChatModel.V4Pro) }
         show(longTitle)
         assertTopBarFits(320, 96)
-        compose.onNodeWithText("deepseek-v4-pro").assertIsDisplayed()
+        onScreen(hasText(longTitle)).assertIsDisplayed()
         shot("narrow-320-font1.5-light")
     }
 

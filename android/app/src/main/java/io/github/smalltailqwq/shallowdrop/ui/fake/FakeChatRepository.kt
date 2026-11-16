@@ -80,7 +80,10 @@ class FakeChatRepository(
     }
 
     override suspend fun regenerate(sessionId: String, assistantMessageId: String, options: SendOptions) {
-        val old = findMessage(sessionId, assistantMessageId) ?: return
+        val session = store.value[sessionId] ?: return
+        val latest = buildState(session, sessionId in generating.value).turns.lastOrNull() ?: return
+        if (latest.message.id != assistantMessageId || !latest.canRegenerate) return
+        val old = latest.message
         val question = old.parentId?.let { findMessage(sessionId, it) as? Message.User }
         val reply = pendingReply(System.currentTimeMillis(), options).copy(parentId = old.parentId)
         mutate(sessionId) { it.attach(reply, old.parentId) }
@@ -283,7 +286,8 @@ class FakeChatRepository(
                 message = message,
                 siblingIndex = siblings.indexOfFirst { it.id == message.id },
                 siblingCount = siblings.size,
-                canRegenerate = message is Message.Assistant && !busy,
+                canRegenerate = message is Message.Assistant && isLast && !busy &&
+                    path.getOrNull(index - 1) is Message.User && message.stopReason != StopReason.Refusal,
                 canContinue = message is Message.Assistant && isLast && !busy && message.prefix &&
                     (message.status == ReplyStatus.Stopped || message.stopReason == StopReason.MaxTokens),
             )

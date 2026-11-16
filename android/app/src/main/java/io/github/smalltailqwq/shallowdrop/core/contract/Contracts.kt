@@ -1,9 +1,11 @@
 package io.github.smalltailqwq.shallowdrop.core.contract
 
 import android.net.Uri
+import io.github.smalltailqwq.shallowdrop.core.model.LocationPreference
 import io.github.smalltailqwq.shallowdrop.core.model.AppLocale
 import io.github.smalltailqwq.shallowdrop.core.model.AppSettings
 import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
+import io.github.smalltailqwq.shallowdrop.core.model.CompactionThresholds
 import io.github.smalltailqwq.shallowdrop.core.model.CreateMessageRequest
 import io.github.smalltailqwq.shallowdrop.core.model.FileAttachment
 import io.github.smalltailqwq.shallowdrop.core.model.FileObject
@@ -140,15 +142,27 @@ interface SettingsRepository {
     /** null 表示清除 */
     suspend fun setApiKey(apiKey: String?)
 
+    suspend fun acceptRechargeNotice()
+
+    suspend fun setLocation(location: LocationPreference)
+
     suspend fun setLocale(locale: AppLocale)
 
     suspend fun setTheme(theme: ThemePreference)
+
+    suspend fun setChatFontSize(size: io.github.smalltailqwq.shallowdrop.core.model.ChatFontSize)
+
+    suspend fun setAutoReadAloud(enabled: Boolean)
+
+    suspend fun setReplySwipe(settings: io.github.smalltailqwq.shallowdrop.core.model.ReplySwipeSettings)
 
     suspend fun setThinking(enabled: Boolean)
 
     suspend fun setSearch(enabled: Boolean)
 
     suspend fun setModel(model: ChatModel)
+
+    suspend fun setCompactionSettings(thresholds: CompactionThresholds, enabled: Boolean = settings.value.compactionEnabled)
 
     /** 语音对话与朗读的音色；默认空实现便于测试替身 */
     suspend fun setTtsVoice(voice: TtsVoice) = Unit

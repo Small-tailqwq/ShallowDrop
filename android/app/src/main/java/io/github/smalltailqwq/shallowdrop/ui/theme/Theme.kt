@@ -7,6 +7,7 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -14,6 +15,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import io.github.smalltailqwq.shallowdrop.core.model.ThemePreference
+import io.github.smalltailqwq.shallowdrop.core.model.ChatFontSize
 
 /*
  * 原创蓝色系配色（不开 dynamic color）。中性色偏冷灰，主色为钴蓝。
@@ -129,6 +131,24 @@ fun groupedCardColor(): Color = MaterialTheme.colorScheme.run { if (background.l
 
 /** 消息正文样式 */
 val MessageTextStyle: TextStyle @Composable get() = MaterialTheme.typography.bodyLarge
+
+/** 聊天内容独立缩放，工具按钮与导航保持原有大小。 */
+@Composable
+fun ChatTextTheme(size: ChatFontSize, content: @Composable () -> Unit) {
+    val base = MaterialTheme.typography
+    val typography = remember(base, size) {
+        val scale = size.sp / 16f
+        fun TextStyle.scaled() = copy(fontSize = fontSize * scale, lineHeight = lineHeight * scale)
+        base.copy(
+            bodyLarge = base.bodyLarge.scaled(),
+            bodyMedium = base.bodyMedium.scaled(),
+            headlineSmall = base.headlineSmall.scaled(),
+            titleLarge = base.titleLarge.scaled(),
+            titleMedium = base.titleMedium.scaled(),
+        )
+    }
+    MaterialTheme(typography = typography, content = content)
+}
 
 @Composable
 fun isAppInDarkTheme(preference: ThemePreference): Boolean = when (preference) {

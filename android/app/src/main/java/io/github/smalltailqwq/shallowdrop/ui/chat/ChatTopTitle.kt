@@ -1,8 +1,7 @@
 package io.github.smalltailqwq.shallowdrop.ui.chat
 
-import androidx.compose.foundation.clickable
+import io.github.smalltailqwq.shallowdrop.ui.motion.pressClickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -33,10 +32,7 @@ import androidx.compose.ui.unit.dp
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
 
-/**
- * 顶栏标题区：会话标题（新对话时没有）+ 当前模型。点击展开模型列表，选择后对之后的提问、重新生成生效。
- * 模型每次发送都会用到，放在这里随时可见、两步可换，不必进设置页。
- */
+/** 单行会话标题；点击展开模型列表，选择后对之后的提问、重新生成生效。 */
 @Composable
 fun ChatTopTitle(
     title: String,
@@ -47,36 +43,28 @@ fun ChatTopTitle(
     var expanded by remember { mutableStateOf(false) }
     val description = stringResource(R.string.model) + ": " + model.id
     Box(modifier) {
-        Column(
+        Row(
             Modifier
                 .clip(RoundedCornerShape(12.dp))
-                .clickable(role = Role.DropdownList) { expanded = true }
+                .pressClickable(role = Role.DropdownList) { expanded = true }
                 .semantics(mergeDescendants = true) { contentDescription = description }
                 .heightIn(min = 48.dp)
-                .padding(horizontal = 10.dp, vertical = 2.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (title.isNotEmpty()) {
-                Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    model.id,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    // 新对话时模型是标题区唯一内容，用正文字号；有标题时作为第二行小字
-                    style = if (title.isEmpty()) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelMedium,
-                    color = if (title.isEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                Icon(
-                    Icons.Outlined.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 2.dp).size(if (title.isEmpty()) 20.dp else 16.dp),
-                )
-            }
+            Text(
+                title.ifEmpty { model.id },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Icon(
+                Icons.Outlined.KeyboardArrowDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp).size(16.dp),
+            )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             ChatModel.entries.forEach { option ->

@@ -88,11 +88,17 @@ class SettingsImageRestoreTest {
         override val settings: StateFlow<AppSettings> = MutableStateFlow(AppSettings(hasApiKey = true))
         override suspend fun apiKey(): String? = "sk-test-key"
         override suspend fun setApiKey(apiKey: String?) = Unit
-        override suspend fun setLocale(locale: AppLocale) = Unit
+        override suspend fun acceptRechargeNotice() = Unit
+        override suspend fun setLocation(location: io.github.smalltailqwq.shallowdrop.core.model.LocationPreference) = Unit
+    override suspend fun setLocale(locale: AppLocale) = Unit
         override suspend fun setTheme(theme: ThemePreference) = Unit
+        override suspend fun setChatFontSize(size: io.github.smalltailqwq.shallowdrop.core.model.ChatFontSize) = Unit
+        override suspend fun setAutoReadAloud(enabled: Boolean) = Unit
+        override suspend fun setReplySwipe(settings: io.github.smalltailqwq.shallowdrop.core.model.ReplySwipeSettings) = Unit
         override suspend fun setThinking(enabled: Boolean) = Unit
         override suspend fun setSearch(enabled: Boolean) = Unit
         override suspend fun setModel(model: ChatModel) = Unit
+        override suspend fun setCompactionSettings(thresholds: io.github.smalltailqwq.shallowdrop.core.model.CompactionThresholds, enabled: Boolean) = Unit
     }
 
     /** 不联网：fail 非空时按该错误码失败，否则把固定 Uri 交给导入 */

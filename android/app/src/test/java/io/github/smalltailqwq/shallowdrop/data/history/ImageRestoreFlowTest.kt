@@ -58,6 +58,7 @@ class ImageRestoreFlowTest {
         store = store,
         attachments = attachments,
         settings = FakeSettings(),
+        resolveLocation = { _, _ -> "" },
         scope = scope,
         restoreAttachments = { backup.retryImageRestore() },
     )

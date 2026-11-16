@@ -14,9 +14,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import io.github.smalltailqwq.shallowdrop.ui.motion.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.IconButton
+import io.github.smalltailqwq.shallowdrop.ui.motion.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -88,6 +88,16 @@ fun OnboardingScreen(
                 style = MaterialTheme.typography.titleLarge,
                 textAlign = TextAlign.Center,
             )
+            Spacer(Modifier.height(16.dp))
+            androidx.compose.material3.Surface(
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.project_notice_title), style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.project_notice), style = MaterialTheme.typography.bodyMedium)
+                }
+            }
             Spacer(Modifier.height(24.dp))
             ApiKeyField(
                 state = state,
