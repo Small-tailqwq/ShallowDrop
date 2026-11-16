@@ -66,6 +66,8 @@ fun AssistantMessage(
     onReadAloud: (String) -> Unit = {},
     swipeSettings: ReplySwipeSettings = ReplySwipeSettings(),
     onNewChat: () -> Unit = {},
+    /** 设置页演示：画出横滑的死区与触发距离 */
+    swipeGuide: Boolean = false,
 ) {
     val message = turn.message as Message.Assistant
     val view = remember(message, streaming) { buildReplyView(message, streaming) }
@@ -97,7 +99,7 @@ fun AssistantMessage(
             )
         }
         if (answer != null) {
-            RegeneratableReply(enabled = canRegenerate && !streaming, settings = swipeSettings, onRegenerate = onRegenerate) {
+            RegeneratableReply(enabled = canRegenerate && !streaming, settings = swipeSettings, onRegenerate = onRegenerate, showGuide = swipeGuide) {
                 MessageMarkdown(answer.markdown, view.sources, streaming = streaming)
             }
         }

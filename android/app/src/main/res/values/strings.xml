@@ -120,8 +120,6 @@
     <string name="font_size_standard">Default</string>
     <string name="font_size_large">Large</string>
     <string name="font_size_extra_large">Largest</string>
-    <string name="font_size_preview_question">Preview chat font size</string>
-    <string name="font_size_preview_reply">Drag the slider to resize messages, thinking content, and input text.</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
     <string name="follow_system">System</string>
@@ -218,7 +216,6 @@
     <string name="reply_swipe_left_to_right">Left to right</string>
     <string name="reply_swipe_right_to_left">Right to left</string>
     <string name="reply_swipe_dead_zone">Edge dead zone</string>
-    <string name="reply_swipe_dead_zone_help">Swipes starting inside the edge dead zone on the starting side do not regenerate.</string>
     <string name="reply_swipe_distance">Trigger distance</string>
     <string name="reply_swipe_dp">%1$d dp</string>
     <string name="read_aloud_empty">This message has no readable text.</string>
@@ -266,4 +263,12 @@
     <string name="location_save_failed">Could not save location settings. Please retry.</string>
     <string name="easter_egg_close">Close animation</string>
     <string name="easter_egg_description">A pelican riding a bicycle</string>
+    <!-- "Pelican theatre" shown in settings previews only; never stored -->
+    <string name="pelican_user_1">Draw a pelican riding a bicycle. Make it look like it\'s really trying.</string>
+    <string name="pelican_thinking_1">Pelican legs are short and the webbed feet can\'t reach the pedals. Lower the saddle all the way, and keep the beak clear of the handlebars.</string>
+    <string name="pelican_reply_1">Done 🚲\n\n- **Pose**: leaning forward, wings resting on the handlebars\n- **Feet**: planted on the pedals, saddle at its lowest\n- **Beak**: a water bottle tucked in the pouch for the long ride</string>
+    <string name="pelican_user_2">The feathers look like plastic, the knees bend the wrong way, and the beak is too short. I review pelican art eight hours a day, at least a hundred bikes a day. You can\'t fool me.</string>
+    <string name="pelican_reply_2_v1">Got it, one by one:\n\n1. **Feathers**: added fine down and shafts in the backlight, no more shine\n2. **Joints**: the part that seems to bend backwards is the ankle; the real knee hides under the feathers\n3. **Beak**: now a third of the body length, with the pouch bouncing on bumps\n\nIf it\'s still not right, I\'ll draw another one.</string>
+    <string name="pelican_reply_2_v2">New idea: this time the pelican rides a tandem, with a fish on the back seat.\n\nFeathers, joints and beak all keep your notes. Honestly, there\'s no perfect solution yet, but this one **at least won\'t crash**.</string>
+    <string name="pelican_reply_2_v3">Version three:\n\n- Helmet and knee pads, which conveniently cover the disputed joints\n- The long beak kept scraping the front wheel, so it got a mudguard\n- Feathers redone with the texture you asked for\n\nI doubt anyone studies pelicans on bikes harder than you do.</string>
 </resources>

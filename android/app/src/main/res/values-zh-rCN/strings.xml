@@ -112,8 +112,6 @@
     <string name="font_size_standard">标准</string>
     <string name="font_size_large">大</string>
     <string name="font_size_extra_large">特大</string>
-    <string name="font_size_preview_question">预览聊天字号</string>
-    <string name="font_size_preview_reply">拖动下方滑块，调整聊天正文、思考内容和输入文字的大小。</string>
     <string name="theme_light">浅色</string>
     <string name="theme_dark">深色</string>
     <string name="follow_system">跟随系统</string>
@@ -207,7 +205,6 @@
     <string name="reply_swipe_left_to_right">从左向右</string>
     <string name="reply_swipe_right_to_left">从右向左</string>
     <string name="reply_swipe_dead_zone">边缘死区</string>
-    <string name="reply_swipe_dead_zone_help">从滑动起始侧的边缘死区内起手时，不触发重新生成。</string>
     <string name="reply_swipe_distance">触发距离</string>
     <string name="reply_swipe_dp">%1$d dp</string>
     <string name="read_aloud_empty">这条消息没有可朗读的正文</string>
@@ -255,4 +252,12 @@
     <string name="location_save_failed">位置设置保存失败，请重试。</string>
     <string name="easter_egg_close">关闭动画</string>
     <string name="easter_egg_description">骑着自行车的鹈鹕</string>
+    <!-- 设置页预览用的「鹈鹕小剧场」，只展示，不写入数据库 -->
+    <string name="pelican_user_1">画一只鹈鹕骑自行车，要看得出它在认真骑。</string>
+    <string name="pelican_thinking_1">鹈鹕腿短，脚蹼够不着踏板。先把车座降到最低，再让喙别挡住车把。</string>
+    <string name="pelican_reply_1">画好了 🚲\n\n- **姿势**：身体前倾，翅膀搭在车把上\n- **脚蹼**：踩稳踏板，车座已经调到最低\n- **喙**：喉囊里装了一瓶水，长途骑行要补给</string>
+    <string name="pelican_user_2">羽毛像塑料，膝关节弯反了，喙也太短。我全职审美 8 小时，每天至少看一百张鹈鹕骑车，骗不了我。</string>
+    <string name="pelican_reply_2_v1">收到，逐条修改：\n\n1. **羽毛**：加了逆光下的细绒毛和羽轴，不再反光\n2. **关节**：看起来“反着弯”的其实是脚踝，真正的膝盖藏在羽毛里\n3. **喙**：拉长到身长的三分之一，喉囊随颠簸轻轻晃\n\n还不满意的话，我再画一版。</string>
+    <string name="pelican_reply_2_v2">换个思路：这次让鹈鹕骑双人自行车，后座载着一条鱼。\n\n羽毛、关节、喙都按你的意见保留。说实话，到现在还没研究出一个完美方案，但这一版**至少不会翻车**。</string>
+    <string name="pelican_reply_2_v3">第三版：\n\n- 戴上头盔和护膝，护膝正好遮住有争议的关节\n- 喙太长会蹭到前轮，所以加了挡泥板\n- 羽毛按你说的质感重新排了一遍\n\n我不信还有谁比你更专门研究鹈鹕骑车。</string>
 </resources>
