@@ -59,6 +59,21 @@ internal fun RideStyle.palette() = when (this) {
         Color(0xFF171C36), Color(0xFFA8EEEA), Color(0xFFFA819C), Color(0xFFE1F9F2),
         Color(0xFF65ABBC), Color(0xFFFFBA88),
     )
+    RideStyle.Reef -> RidePalette(
+        Color(0xFFD9F4EC), Color(0xFF4DBAC6), Color(0xFF3AA3B5), Color(0xFF2788A0),
+        Color(0xFFF1E2B4), Color(0xFF0B3147), Color(0xFFFF7E6B), Color(0xFFF7FFFB),
+        Color(0xFF8FD3CF), Color(0xFFFFB85C),
+    )
+    RideStyle.Orbit -> RidePalette(
+        Color(0xFF171C48), Color(0xFF141A45), Color(0xFFB7A6E8), Color(0xFF2E8792),
+        Color(0xFF63C2A8), Color(0xFFFFEBC8), Color(0xFFFF8A7A), Color(0xFFFFF8E7),
+        Color(0xFFB7A6E8), Color(0xFFFFC56B),
+    )
+    RideStyle.Cloud -> RidePalette(
+        Color(0xFFFFF4E4), Color(0xFF7CC4EE), Color(0xFFFFFFFF), Color(0xFF7BC47F),
+        Color(0xFFFFFFFF), Color(0xFF3A3560), Color(0xFFEF5B5B), Color(0xFFFFFDF6),
+        Color(0xFFA9C4E8), Color(0xFFFFB347),
+    )
 }
 
 internal fun progress(time: Float, from: Float, to: Float): Float {
@@ -87,7 +102,11 @@ internal fun PelicanScene(style: RideStyle, elapsed: () -> Float, modifier: Modi
             RideStyle.Ink -> 1.5f
             RideStyle.Coast -> 1.15f
             RideStyle.Night -> 1.8f
+            RideStyle.Reef -> 1.4f
+            RideStyle.Orbit -> 1.7f
+            RideStyle.Cloud -> 1.3f
         }
+        val stage = Stage(road, height, rideScale, time, moving)
         val riderY = road - 253f * rideScale
         val focus = Offset(500f - PelicanHeadCenter.x * rideScale, riderY + PelicanHeadCenter.y * rideScale)
         drawRect(lerp(Color(0xFF10171A), palette.paper, progress(time, 0f, 1.25f)))
@@ -97,17 +116,19 @@ internal fun PelicanScene(style: RideStyle, elapsed: () -> Float, modifier: Modi
                 scale(camera, camera, focus)
             }) {
                 reveal(style, progress(time, 1.05f, 3.4f), height, 0) {
-                    drawRect(Brush.verticalGradient(listOf(palette.sky, palette.paper), endY = road), size = Size(1000f, height))
-                    drawSky(style, palette, road, -moving)
+                    if (!drawWorld(style, 0, palette, stage)) {
+                        drawRect(Brush.verticalGradient(listOf(palette.sky, palette.paper), endY = road), size = Size(1000f, height))
+                        drawSky(style, palette, road, -moving)
+                    }
                 }
                 reveal(style, progress(time, 1.9f, 4.6f), height, 1) {
-                    drawLandscape(style, palette, road, -moving, distant = true)
+                    if (!drawWorld(style, 1, palette, stage)) drawLandscape(style, palette, road, -moving, distant = true)
                 }
                 reveal(style, progress(time, 2.65f, 5.4f), height, 2) {
-                    drawLandscape(style, palette, road, -moving, distant = false)
+                    if (!drawWorld(style, 2, palette, stage)) drawLandscape(style, palette, road, -moving, distant = false)
                 }
                 reveal(style, progress(time, 3.2f, 5.9f), height, 3) {
-                    drawRoad(style, palette, road, height, -moving)
+                    if (!drawWorld(style, 3, palette, stage)) drawRoad(style, palette, road, height, -moving)
                 }
                 val logoAlpha = progress(time, 0.15f, 1.1f)
                 if (logoAlpha > 0f) {
@@ -131,7 +152,7 @@ internal fun PelicanScene(style: RideStyle, elapsed: () -> Float, modifier: Modi
                     }
                 }
                 reveal(style, progress(time, 4.8f, 6.8f), height, 4) {
-                    drawForeground(style, palette, road, height, -moving)
+                    if (!drawWorld(style, 4, palette, stage)) drawForeground(style, palette, road, height, -moving)
                 }
             }
             // 窄幅遮幅随镜头后拉收起，给循环段留出完整画面。
@@ -172,6 +193,14 @@ private fun DrawScope.reveal(style: RideStyle, amount: Float, height: Float, see
                     if (point == 0) mask.moveTo(px, py) else mask.lineTo(px, py)
                 }
                 mask.close()
+            }
+            // 浅海冒泡、星球迸出星芒、云端长出云朵。
+            RideStyle.Reef -> mask.addOval(Rect(Offset(x, y), radius))
+            RideStyle.Orbit -> mask.addStar(Offset(x, y), radius * 1.7f, radius * 0.8f, 4)
+            RideStyle.Cloud -> {
+                mask.addOval(Rect(x - radius * 1.3f, y - radius * 0.5f, x + radius * 1.3f, y + radius * 0.5f))
+                mask.addOval(Rect(Offset(x - radius * 0.4f, y - radius * 0.45f), radius * 0.6f))
+                mask.addOval(Rect(Offset(x + radius * 0.45f, y - radius * 0.3f), radius * 0.45f))
             }
         }
     }
@@ -216,6 +245,7 @@ private fun DrawScope.drawSky(style: RideStyle, p: RidePalette, road: Float, tim
                 drawCircle(p.feather.copy(alpha = 0.25f + 0.25f * (1f + sin(time * 0.6f + i))), if (i % 7 == 0) 2.3f else 1.1f, point)
             }
         }
+        else -> Unit
     }
 }
 
@@ -290,6 +320,7 @@ private fun DrawScope.drawLandscape(style: RideStyle, p: RidePalette, road: Floa
                         }
                     }
                 }
+                else -> Unit
             }
         }
     }
@@ -330,6 +361,7 @@ private fun DrawScope.drawRoad(style: RideStyle, p: RidePalette, road: Float, he
                 drawLine(p.accent.copy(alpha = 0.7f), Offset(x, road + 80f), Offset(x + 65f, road + 80f), 4f)
             }
         }
+        else -> Unit
     }
 }
 
@@ -360,6 +392,7 @@ private fun DrawScope.drawForeground(style: RideStyle, p: RidePalette, road: Flo
                     drawLine(p.accent, Offset(100f, y - 50f), Offset(100f, y - 20f), 7f, StrokeCap.Round)
                     drawOval(p.accent.copy(alpha = 0.08f), Offset(55f, y + 45f), Size(90f, 14f))
                 }
+                else -> Unit
             }
         }
     }

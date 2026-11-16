@@ -140,6 +140,7 @@ internal fun DrawScope.drawPelican(
                     repeat(3) { i -> drawLine(p.line.copy(alpha = 0.7f * pigment), Offset(62f + i * 12f, -224f), Offset(67f + i * 12f, -215f), 3f, StrokeCap.Round) }
                     drawScarf(p, cycle, angular = true)
                 }
+                else -> drawWorldGear(style, p, pigment, cycle, time)
             }
         }
     }
@@ -200,6 +201,7 @@ private fun DrawScope.drawBicycle(style: RideStyle, p: RidePalette, time: Float,
         inkShape(bag, p.near, p.line, 3f)
         drawLine(p.accent, Offset(-179f, 48f), Offset(-178f, 103f), 8f)
     }
+    drawWorldBike(style, p, time, pigment)
     if (style == RideStyle.Night) {
         drawCircle(p.beak.copy(alpha = 0.12f * pigment), 22f, Offset(130f, 0f))
         drawCircle(p.feather, 6f, Offset(130f, 0f))
@@ -220,7 +222,7 @@ private fun DrawScope.drawLeg(hip: Offset, foot: Offset, fill: Color, outline: C
     drawLine(fill, foot + Offset(-4f, 0f), foot + Offset(18f, 0f), 6f, StrokeCap.Round)
 }
 
-private fun DrawScope.drawScarf(p: RidePalette, cycle: Float, angular: Boolean) {
+internal fun DrawScope.drawScarf(p: RidePalette, cycle: Float, angular: Boolean) {
     val flutter = sin(cycle - 0.8f) * 7f
     val scarf = Path().apply {
         moveTo(30f, -126f); lineTo(70f, -117f); lineTo(63f, -104f); lineTo(28f, -113f); close()
@@ -238,7 +240,7 @@ private fun DrawScope.drawScarf(p: RidePalette, cycle: Float, angular: Boolean) 
     inkShape(scarf, p.accent, p.line, 2f)
 }
 
-private fun DrawScope.inkShape(path: Path, fill: Color, outline: Color, width: Float) {
+internal fun DrawScope.inkShape(path: Path, fill: Color, outline: Color, width: Float) {
     drawPath(path, fill)
     drawPath(path, outline, style = Stroke(width, cap = StrokeCap.Round, join = StrokeJoin.Round))
 }

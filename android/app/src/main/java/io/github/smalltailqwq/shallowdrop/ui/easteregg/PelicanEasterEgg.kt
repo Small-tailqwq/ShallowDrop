@@ -35,7 +35,7 @@ import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.ui.motion.IconButton
 import kotlinx.coroutines.isActive
 
-internal enum class RideStyle { Ink, Coast, Night }
+internal enum class RideStyle { Ink, Coast, Night, Reef, Orbit, Cloud }
 
 internal class VersionTapTrigger {
     private var count = 0

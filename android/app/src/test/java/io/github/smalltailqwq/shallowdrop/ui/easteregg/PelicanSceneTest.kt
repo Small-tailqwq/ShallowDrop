@@ -30,6 +30,13 @@ class PelicanSceneTest {
     @Test fun inkRevealsAndKeepsRiding() = render(RideStyle.Ink)
     @Test fun coastRevealsAndKeepsRiding() = render(RideStyle.Coast)
     @Test fun nightRevealsAndKeepsRiding() = render(RideStyle.Night)
+    @Test fun reefRevealsAndKeepsRiding() = render(RideStyle.Reef)
+    @Test fun orbitRevealsAndKeepsRiding() = render(RideStyle.Orbit)
+    @Test fun cloudRevealsAndKeepsRiding() = render(RideStyle.Cloud)
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w892dp-h412dp-xhdpi")
+    fun landscapeFitsTheTinyPlanet() = render(RideStyle.Orbit)
 
     @Test
     @Config(qualifiers = "zh-rCN-w892dp-h412dp-xhdpi")

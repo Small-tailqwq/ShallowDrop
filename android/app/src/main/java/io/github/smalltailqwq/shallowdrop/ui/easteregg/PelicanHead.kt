@@ -141,7 +141,8 @@ internal fun DrawScope.drawPelicanHead(head: PelicanHead, amount: Float, p: Ride
         }
         drawPath(bill, lerp(p.beak, p.feather, 0.35f))
     }
-    val eyeColor = if (style == RideStyle.Night) Color(0xFF101329) else p.line
+    // 深色底的风格描线是浅色，眼珠改用底色才看得见。
+    val eyeColor = if (style == RideStyle.Night || style == RideStyle.Orbit) p.paper else p.line
     drawCircle(p.feather, 5.4f, Eye)
     if (time % 5.7f in 4.8f..4.95f) {
         drawLine(eyeColor.copy(alpha = pigment), Eye - Offset(4f, 0f), Eye + Offset(4f, 0f), 2.5f, StrokeCap.Round)
