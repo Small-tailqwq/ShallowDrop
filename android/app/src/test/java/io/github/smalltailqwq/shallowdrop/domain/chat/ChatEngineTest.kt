@@ -38,6 +38,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonPrimitive
+import io.github.smalltailqwq.shallowdrop.domain.voice.voiceSystemPrompt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -98,6 +99,21 @@ class ChatEngineTest {
     private fun Message.Assistant.text() = replyText(this)
 
     private fun MessageParam.User.text() = content.filterIsInstance<UserContentParam.Text>().joinToString("") { it.text }
+
+    @Test
+    fun voiceTurnAppendsVoicePromptOnlyForThatRequest() = engineTest { engine ->
+        api.scripts += { textReply("好的") }
+        api.scripts += { textReply("嗯") }
+        val id = engine.send(null, "唱首歌", emptyList(), options.copy(voice = true))
+        advanceUntilIdle()
+        engine.send(id, "打字提问", emptyList(), options)
+        advanceUntilIdle()
+
+        val voice = api.requests[0].system
+        assertTrue(voice.startsWith(ChatEngine.SYSTEM_PROMPT))
+        assertTrue(voice.contains(voiceSystemPrompt(ReminderLocale.ZhCN)))
+        assertEquals(ChatEngine.SYSTEM_PROMPT, api.requests[1].system)
+    }
 
     @Test
     fun sendCreatesSessionStreamsReplyAndAppliesTitle() = engineTest { engine ->

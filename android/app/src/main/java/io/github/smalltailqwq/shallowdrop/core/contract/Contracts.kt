@@ -81,7 +81,23 @@ interface AttachmentStore {
 
 data class ImportProgress(val done: Int, val total: Int?)
 
-data class ImportResult(val sessions: Int, val messages: Int, val files: Int)
+data class ImportResult(
+    val sessions: Int,
+    val messages: Int,
+    val files: Int,
+    /** 会话已导入生效，但图片原件尚未全部恢复到位（见 [ImageRestoreState.Pending]） */
+    val imagesPending: Boolean = false,
+)
+
+/** 导入图片原件的恢复状态。导入先提交会话数据，再把图片原件换入；两步之间中断或失败时为 Pending。 */
+enum class ImageRestoreState {
+    /** 启动后尚未确认 */
+    Checking,
+    Ready,
+
+    /** 会话已是导入后的数据，图片原件还没恢复完；可重试，应用启动时也会自动重试 */
+    Pending,
+}
 
 /** 历史导入导出，格式见 src/services/chat/history/README.md。失败抛 HistoryException。 */
 interface HistoryBackup {
@@ -89,9 +105,28 @@ interface HistoryBackup {
     suspend fun importArchive(uri: Uri, onProgress: (ImportProgress) -> Unit = {}): ImportResult
 
     suspend fun exportArchive(uri: Uri)
+
+    val imageRestore: StateFlow<ImageRestoreState>
+
+    /** 尝试完成图片原件的恢复；返回恢复后图片是否全部就绪。不抛出恢复失败 */
+    suspend fun retryImageRestore(): Boolean
 }
 
 class HistoryException(val code: String, message: String, cause: Throwable? = null) : Exception(message, cause)
+
+data class DownloadProgress(val bytes: Long, val total: Long?)
+
+/**
+ * 官方 DeepSeek App（2.8.0+）「设置 → 数据管理 → 导出所有历史对话」生成的下载链接。
+ * 链接由服务端签发、7 天有效、无需登录，下载得到的 ZIP 与导入格式相同。失败抛 HistoryException。
+ */
+interface ExportLinkDownloader {
+    /** 从粘贴的文本中取出第一个 https 链接；没有时返回 null */
+    fun parse(text: String): String?
+
+    /** 下载到应用缓存后交给 [use]，结束后删除临时文件 */
+    suspend fun <T> download(link: String, onProgress: (DownloadProgress) -> Unit, use: suspend (Uri) -> T): T
+}
 
 interface SettingsRepository {
     val settings: StateFlow<AppSettings>
@@ -129,7 +164,13 @@ data class ConversationState(
     val generating: Boolean,
 )
 
-data class SendOptions(val thinking: Boolean, val search: Boolean, val model: ChatModel)
+data class SendOptions(
+    val thinking: Boolean,
+    val search: Boolean,
+    val model: ChatModel,
+    /** 语音对话的轮次：system 追加语音模式说明（见 domain/voice/VoicePrompt.kt），不改变消息存储 */
+    val voice: Boolean = false,
+)
 
 /** UI 使用的对话接口。 */
 interface ChatRepository {

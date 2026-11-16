@@ -8,6 +8,11 @@
     <string name="content_caveat">AI-generated, for reference only</string>
     <string name="open_sidebar">Open sidebar</string>
     <string name="new_chat">New chat</string>
+    <string name="sider_search">Search chats</string>
+    <string name="sider_empty">No chats yet</string>
+    <string name="sider_no_match">No matching chats</string>
+    <string name="clear">Clear</string>
+    <string name="model_selected">Selected</string>
     <string name="untitled_chat">New chat</string>
     <string name="scroll_to_bottom">Scroll to bottom</string>
     <string name="chat_input_placeholder">Enter a message</string>
@@ -125,11 +130,19 @@
     <string name="history_import_confirm">Import</string>
     <string name="history_import_confirm_title">Import chat history?</string>
     <string name="history_import_confirm_description">The uploaded chat history will replace all your current chats. Import anyway?</string>
+    <string name="history_import_link">Download link</string>
+    <string name="history_import_from_file">Choose file</string>
     <plurals name="history_imported">
         <item quantity="one">Imported %d chat</item>
         <item quantity="other">Imported %d chats</item>
     </plurals>
     <string name="history_import_failed">File import failed. The file format may be invalid, or the ZIP file may use an older chat export format. Please export your chat history from DeepSeek again and retry the import.</string>
+    <string name="history_imported_images_pending">Chats imported, but images are not restored yet. Retry in Settings → Data, or restart the app.</string>
+    <string name="retry">Retry</string>
+    <string name="images_restore_pending">Imported images not restored</string>
+    <string name="images_restored">Images restored</string>
+    <string name="images_restore_failed">Could not restore images. Free up storage and retry.</string>
+    <string name="images_restoring_send">Imported images are not restored yet, so this message was not sent. Retry in Settings → Data, then regenerate.</string>
     <string name="history_export">Export all chats</string>
     <string name="history_exported">Exported</string>
     <string name="history_export_failed">Export failed: %1$s</string>
@@ -146,4 +159,24 @@
     <string name="backup_incomplete">The file is incomplete and cannot be imported.</string>
     <string name="backup_invalid_branches">The message branches in this file are corrupted and cannot be imported.</string>
     <string name="backup_invalid_files">The attachment data in this file is corrupted and cannot be imported.</string>
+    <string name="backup_link_invalid">Not a valid download link</string>
+    <string name="backup_link_expired">The download link has expired. Export again in the DeepSeek app.</string>
+    <string name="backup_download_failed">Download failed. Check your network and try again.</string>
+
+    <!-- Voice chat -->
+    <string name="voice_chat">Voice chat</string>
+    <string name="voice_connecting">Connecting</string>
+    <string name="voice_listening">Listening</string>
+    <string name="voice_thinking">Thinking</string>
+    <string name="voice_speaking">Speaking</string>
+    <string name="voice_muted">Muted</string>
+    <string name="voice_mute">Mute</string>
+    <string name="voice_unmute">Unmute</string>
+    <string name="voice_hang_up">Hang up</string>
+    <string name="voice_captions">Captions</string>
+    <string name="voice_no_recognizer">No speech recognition service on this device</string>
+    <string name="voice_no_synthesizer">No text-to-speech engine on this device</string>
+    <string name="voice_permission">Microphone access is needed. Tap the orb to allow.</string>
+    <string name="voice_network">Speech recognition is offline. Tap the orb to retry.</string>
+    <string name="voice_reply_failed">Reply failed. Please say it again.</string>
 </resources>

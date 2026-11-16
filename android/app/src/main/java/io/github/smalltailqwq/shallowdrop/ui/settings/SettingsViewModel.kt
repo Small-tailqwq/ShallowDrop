@@ -6,9 +6,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.contract.ChatRepository
+import io.github.smalltailqwq.shallowdrop.core.contract.DownloadProgress
+import io.github.smalltailqwq.shallowdrop.core.contract.ExportLinkDownloader
 import io.github.smalltailqwq.shallowdrop.core.contract.HistoryBackup
 import io.github.smalltailqwq.shallowdrop.core.contract.HistoryException
 import io.github.smalltailqwq.shallowdrop.core.contract.ImportProgress
+import io.github.smalltailqwq.shallowdrop.core.contract.ImportResult
 import io.github.smalltailqwq.shallowdrop.core.contract.SettingsRepository
 import io.github.smalltailqwq.shallowdrop.core.model.AppLocale
 import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
@@ -28,17 +31,23 @@ import kotlinx.coroutines.launch
 
 /** 数据操作进行中的状态；同一时间只允许一个 */
 sealed interface DataTask {
+    /** 下载官方 App 的导出链接，完成后转为 Importing */
+    data class Downloading(val progress: DownloadProgress?) : DataTask
+
     data class Importing(val progress: ImportProgress?) : DataTask
 
     data object Exporting : DataTask
 
     data object Deleting : DataTask
+
+    data object RestoringImages : DataTask
 }
 
 class SettingsViewModel(
     private val settingsRepository: SettingsRepository,
     private val chatRepository: ChatRepository,
     private val historyBackup: HistoryBackup,
+    private val linkDownloader: ExportLinkDownloader,
     verifyApiKey: suspend (String) -> Unit,
 ) : ViewModel() {
     val settings = settingsRepository.settings
@@ -46,6 +55,9 @@ class SettingsViewModel(
 
     private val taskState = MutableStateFlow<DataTask?>(null)
     val task: StateFlow<DataTask?> = taskState.asStateFlow()
+
+    /** 导入的会话已生效但图片原件还没恢复完时为 Pending，设置页据此显示重试入口 */
+    val imageRestore = historyBackup.imageRestore
 
     private val eventChannel = Channel<UiText>(Channel.BUFFERED)
     val events: Flow<UiText> = eventChannel.receiveAsFlow()
@@ -85,10 +97,33 @@ class SettingsViewModel(
         }
     }
 
-    fun importHistory(uri: Uri) = runTask(DataTask.Importing(null)) {
+    fun importHistory(uri: Uri) = runTask(DataTask.Importing(null)) { importResult { runImport(uri) } }
+
+    /** 从粘贴的链接中取出下载地址；不是有效链接时返回 null */
+    fun parseLink(text: String): String? = linkDownloader.parse(text)
+
+    /** 下载官方 App 导出的链接后导入；下载失败不改动本地数据 */
+    fun importHistoryFromLink(link: String) = runTask(DataTask.Downloading(null)) {
+        importResult {
+            linkDownloader.download(link, onProgress = { taskState.value = DataTask.Downloading(it) }) { uri ->
+                taskState.value = DataTask.Importing(null)
+                runImport(uri)
+            }
+        }
+    }
+
+    private suspend fun runImport(uri: Uri) =
+        historyBackup.importArchive(uri) { progress -> taskState.value = DataTask.Importing(progress) }
+
+    private suspend fun importResult(block: suspend () -> ImportResult): UiText =
         try {
-            val result = historyBackup.importArchive(uri) { progress -> taskState.value = DataTask.Importing(progress) }
-            UiText.Plural(R.plurals.history_imported, result.sessions)
+            val result = block()
+            // 会话已生效但图片没恢复完时不报「导入成功」，明确告知并指向重试
+            if (result.imagesPending) {
+                UiText.Res(R.string.history_imported_images_pending)
+            } else {
+                UiText.Plural(R.plurals.history_imported, result.sessions)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: HistoryException) {
@@ -97,6 +132,20 @@ class SettingsViewModel(
         } catch (e: Exception) {
             Log.w(TAG, "导入失败", e)
             UiText.Res(R.string.history_import_failed)
+        }
+
+    fun retryImageRestore() = runTask(DataTask.RestoringImages) {
+        try {
+            if (historyBackup.retryImageRestore()) {
+                UiText.Res(R.string.images_restored)
+            } else {
+                UiText.Res(R.string.images_restore_failed)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "图片恢复失败", e)
+            UiText.Res(R.string.images_restore_failed)
         }
     }
 
@@ -115,6 +164,8 @@ class SettingsViewModel(
     fun deleteAll() = runTask(DataTask.Deleting) {
         try {
             chatRepository.deleteAll()
+            // 全部删除会一并丢弃待恢复的图片，刷新恢复状态
+            historyBackup.retryImageRestore()
             UiText.Res(R.string.deleted)
         } catch (e: CancellationException) {
             throw e
@@ -128,7 +179,13 @@ class SettingsViewModel(
         private const val TAG = "SettingsViewModel"
 
         val Factory = uiViewModelFactory { deps: UiDependencies, _ ->
-            SettingsViewModel(deps.settingsRepository, deps.chatRepository, deps.historyBackup, deps.verifyApiKey)
+            SettingsViewModel(
+                deps.settingsRepository,
+                deps.chatRepository,
+                deps.historyBackup,
+                deps.exportLinkDownloader,
+                deps.verifyApiKey,
+            )
         }
 
         /** HistoryException.code 采用 Web 版 i18n 键名（backupXxx） */
@@ -140,6 +197,9 @@ class SettingsViewModel(
             "backupIncomplete" -> R.string.backup_incomplete
             "backupInvalidBranches" -> R.string.backup_invalid_branches
             "backupInvalidFiles" -> R.string.backup_invalid_files
+            "backupLinkInvalid" -> R.string.backup_link_invalid
+            "backupLinkExpired" -> R.string.backup_link_expired
+            "backupDownloadFailed" -> R.string.backup_download_failed
             else -> R.string.history_import_failed
         }
     }

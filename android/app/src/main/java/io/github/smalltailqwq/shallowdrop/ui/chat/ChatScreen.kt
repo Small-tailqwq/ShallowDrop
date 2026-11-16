@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AddComment
+import androidx.compose.material.icons.outlined.Call
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.Menu
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -59,12 +60,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -76,6 +79,7 @@ import io.github.smalltailqwq.shallowdrop.ui.components.AppMark
 import io.github.smalltailqwq.shallowdrop.ui.sider.SessionListViewModel
 import io.github.smalltailqwq.shallowdrop.ui.sider.SessionSider
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 
 /** 宽度不小于该值时侧栏常驻 */
@@ -87,6 +91,11 @@ fun ChatScreen(
     onOpenSettings: () -> Unit,
     viewModel: ChatViewModel = viewModel(factory = ChatViewModel.Factory),
     sessionList: SessionListViewModel = viewModel(factory = SessionListViewModel.Factory),
+    /** 进入语音对话，参数为当前会话（新对话为 null） */
+    onOpenVoice: (String?) -> Unit = {},
+    /** 语音对话结束后要打开的会话；打开后调用 onOpenSessionHandled */
+    openSession: String? = null,
+    onOpenSessionHandled: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val groups by sessionList.groups.collectAsStateWithLifecycle()
@@ -96,6 +105,13 @@ fun ChatScreen(
 
     LaunchedEffect(viewModel, sessionList) {
         merge(viewModel.events, sessionList.events).collect { snackbar.showSnackbar(it.resolve(context)) }
+    }
+
+    LaunchedEffect(openSession) {
+        if (openSession != null) {
+            viewModel.openSession(openSession)
+            onOpenSessionHandled()
+        }
     }
 
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -135,6 +151,7 @@ fun ChatScreen(
                     if (wide) siderVisible = !siderVisible else scope.launch { drawerState.open() }
                 },
                 onOpenSettings = onOpenSettings,
+                onOpenVoice = { onOpenVoice(state.sessionId) },
             )
         }
 
@@ -159,6 +176,12 @@ fun ChatScreen(
                 Box(Modifier.weight(1f)) { content() }
             }
         } else {
+            val focusManager = LocalFocusManager.current
+            LaunchedEffect(drawerState) {
+                snapshotFlow { drawerState.targetValue }.drop(1).collect { target ->
+                    if (target == DrawerValue.Closed) focusManager.clearFocus()
+                }
+            }
             BackHandler(enabled = drawerState.isOpen) { closeDrawer() }
             ModalNavigationDrawer(
                 drawerState = drawerState,
@@ -180,6 +203,7 @@ private fun ChatContent(
     snackbar: SnackbarHostState,
     onMenu: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenVoice: () -> Unit,
 ) {
     val listState = rememberLazyListState()
     // 每个会话各自的跟随状态，打开会话时从底部开始
@@ -206,13 +230,17 @@ private fun ChatContent(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium) },
+                expandedHeight = (64 + 64 * (LocalDensity.current.fontScale - 1f).coerceAtLeast(0f)).dp,
+                title = { ChatTopTitle(title, state.settings.model, viewModel::setModel) },
                 navigationIcon = {
                     IconButton(onClick = onMenu) {
                         Icon(Icons.Outlined.Menu, contentDescription = stringResource(R.string.open_sidebar))
                     }
                 },
                 actions = {
+                    IconButton(onClick = onOpenVoice) {
+                        Icon(Icons.Outlined.Call, contentDescription = stringResource(R.string.voice_chat))
+                    }
                     IconButton(onClick = { viewModel.openSession(null) }, enabled = state.sessionId != null) {
                         Icon(Icons.Outlined.AddComment, contentDescription = stringResource(R.string.new_chat))
                     }

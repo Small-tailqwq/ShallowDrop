@@ -1,5 +1,14 @@
 package io.github.smalltailqwq.shallowdrop.ui.settings
 
+import android.content.ClipboardManager
+import android.content.Context
+import android.net.Uri
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -27,6 +36,7 @@ import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.BrokenImage
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.FileUpload
 import androidx.compose.material.icons.outlined.Gavel
@@ -69,6 +79,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.smalltailqwq.shallowdrop.BuildConfig
 import io.github.smalltailqwq.shallowdrop.R
+import io.github.smalltailqwq.shallowdrop.core.contract.ImageRestoreState
 import io.github.smalltailqwq.shallowdrop.core.model.AppLocale
 import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
 import io.github.smalltailqwq.shallowdrop.core.model.ThemePreference
@@ -81,7 +92,7 @@ import java.time.LocalDate
 /** TODO 发布前确认开源仓库地址 */
 const val SOURCE_CODE_URL = "https://github.com/Small-tailqwq/ShallowDrop"
 
-private enum class SettingsDialog { ApiKey, Language, Theme, Model, ImportConfirm, DeleteAll }
+private enum class SettingsDialog { ApiKey, Language, Theme, Model, ImportSource, ImportConfirm, DeleteAll }
 
 /** 设置页：通用（API Key、语言、主题、模型）、数据管理（导入 / 导出 / 删除全部）、关于。 */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,16 +100,22 @@ private enum class SettingsDialog { ApiKey, Language, Theme, Model, ImportConfir
 fun SettingsScreen(
     onBack: () -> Unit,
     onOpenLicense: () -> Unit,
+    /** 从其他应用打开或分享进来的 ZIP；接手后调用 onIncomingImportHandled */
+    incomingImport: Uri? = null,
+    onIncomingImportHandled: () -> Unit = {},
     viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory),
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val task by viewModel.task.collectAsStateWithLifecycle()
+    val imageRestore by viewModel.imageRestore.collectAsStateWithLifecycle()
     val maskedKey by viewModel.maskedKey.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     var dialog by rememberSaveable { mutableStateOf<SettingsDialog?>(null) }
-    var pendingImport by rememberSaveable { mutableStateOf<android.net.Uri?>(null) }
+    var pendingImport by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var pendingLink by rememberSaveable { mutableStateOf<String?>(null) }
+    var linkText by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(viewModel) {
         viewModel.events.collect { snackbar.showSnackbar(it.resolve(context)) }
@@ -114,6 +131,15 @@ fun SettingsScreen(
         if (uri != null) viewModel.exportHistory(uri)
     }
     val busy = task != null
+
+    LaunchedEffect(incomingImport, busy) {
+        if (incomingImport != null && !busy) {
+            pendingLink = null
+            pendingImport = incomingImport
+            dialog = SettingsDialog.ImportConfirm
+            onIncomingImportHandled()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -154,20 +180,49 @@ fun SettingsScreen(
                 }
                 Section(stringResource(R.string.data)) {
                     val importing = task as? DataTask.Importing
+                    val downloading = task as? DataTask.Downloading
                     SettingRow(
                         Icons.Outlined.FileUpload,
                         stringResource(R.string.history_import),
-                        progress = importing != null,
+                        progress = importing != null || downloading != null,
                         enabled = !busy,
-                    ) { importPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) }
+                    ) {
+                        // 官方 App「复制下载链接」后回到这里，剪贴板里有链接就直接填上
+                        linkText = readClipboardText(context)?.let(viewModel::parseLink).orEmpty()
+                        dialog = SettingsDialog.ImportSource
+                    }
+                    val progressModifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                    if (downloading != null) {
+                        val bytes = downloading.progress?.bytes ?: 0L
+                        val total = downloading.progress?.total
+                        if (total != null && total > 0) {
+                            LinearProgressIndicator(
+                                progress = { (bytes.toFloat() / total).coerceIn(0f, 1f) },
+                                modifier = progressModifier,
+                            )
+                        } else {
+                            LinearProgressIndicator(modifier = progressModifier)
+                        }
+                    }
                     importing?.progress?.let { progress ->
                         val total = progress.total
                         if (total != null && total > 0) {
                             LinearProgressIndicator(
                                 progress = { progress.done.toFloat() / total },
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                                modifier = progressModifier,
                             )
                         }
+                    }
+                    if (imageRestore == ImageRestoreState.Pending) {
+                        SettingRow(
+                            Icons.Outlined.BrokenImage,
+                            stringResource(R.string.images_restore_pending),
+                            value = stringResource(R.string.retry),
+                            progress = task == DataTask.RestoringImages,
+                            chevron = false,
+                            enabled = !busy,
+                            onClick = viewModel::retryImageRestore,
+                        )
                     }
                     SettingRow(
                         Icons.Outlined.FileDownload,
@@ -230,18 +285,40 @@ fun SettingsScreen(
             },
             onDismiss = { dialog = null },
         )
+        SettingsDialog.ImportSource -> ImportSourceDialog(
+            link = linkText,
+            onLinkChange = { linkText = it },
+            valid = viewModel.parseLink(linkText) != null,
+            onSubmit = {
+                viewModel.parseLink(linkText)?.let {
+                    pendingImport = null
+                    pendingLink = it
+                    dialog = SettingsDialog.ImportConfirm
+                }
+            },
+            onPickFile = {
+                dialog = null
+                importPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
+            },
+            onDismiss = { dialog = null },
+        )
         SettingsDialog.ImportConfirm -> ConfirmDialog(
             title = stringResource(R.string.history_import_confirm_title),
             text = stringResource(R.string.history_import_confirm_description),
             confirmLabel = stringResource(R.string.history_import_confirm),
             onConfirm = {
                 dialog = null
-                pendingImport?.let(viewModel::importHistory)
+                val link = pendingLink
+                val uri = pendingImport
+                if (link != null) viewModel.importHistoryFromLink(link) else if (uri != null) viewModel.importHistory(uri)
                 pendingImport = null
+                pendingLink = null
+                linkText = ""
             },
             onDismiss = {
                 dialog = null
                 pendingImport = null
+                pendingLink = null
             },
         )
         SettingsDialog.DeleteAll -> ConfirmDialog(
@@ -257,6 +334,53 @@ fun SettingsScreen(
         )
         null -> Unit
     }
+}
+
+/** 粘贴官方 App 的导出下载链接，或改为选择本地 ZIP */
+@Composable
+private fun ImportSourceDialog(
+    link: String,
+    onLinkChange: (String) -> Unit,
+    valid: Boolean,
+    onSubmit: () -> Unit,
+    onPickFile: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.history_import)) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = link,
+                    onValueChange = onLinkChange,
+                    label = { Text(stringResource(R.string.history_import_link)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = { if (valid) onSubmit() }),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TextButton(onClick = onPickFile, modifier = Modifier.padding(top = 8.dp)) {
+                    Icon(Icons.Outlined.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.history_import_from_file))
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onSubmit, enabled = valid) { Text(stringResource(R.string.confirm)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+private fun readClipboardText(context: Context): String? {
+    val clipboard = context.getSystemService(ClipboardManager::class.java) ?: return null
+    val clip = runCatching { clipboard.primaryClip }.getOrNull() ?: return null
+    if (clip.itemCount == 0) return null
+    return clip.getItemAt(0).coerceToText(context)?.toString()
 }
 
 @Composable

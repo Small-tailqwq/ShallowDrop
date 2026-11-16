@@ -6,6 +6,11 @@
     <string name="content_caveat">内容由 AI 生成，请仔细甄别</string>
     <string name="open_sidebar">打开边栏</string>
     <string name="new_chat">开启新对话</string>
+    <string name="sider_search">搜索对话</string>
+    <string name="sider_empty">还没有对话</string>
+    <string name="sider_no_match">没有匹配的对话</string>
+    <string name="clear">清除</string>
+    <string name="model_selected">已选择</string>
     <string name="untitled_chat">新对话</string>
     <string name="scroll_to_bottom">回到底部</string>
     <string name="chat_input_placeholder">请输入消息</string>
@@ -115,10 +120,18 @@
     <string name="history_import_confirm">确认导入</string>
     <string name="history_import_confirm_title">确认导入历史对话？</string>
     <string name="history_import_confirm_description">上传的历史对话会覆盖当前所有对话记录，是否确认导入？</string>
+    <string name="history_import_link">下载链接</string>
+    <string name="history_import_from_file">选择文件</string>
     <plurals name="history_imported">
         <item quantity="other">已导入 %d 个对话</item>
     </plurals>
     <string name="history_import_failed">文件导入失败，可能是文件格式错误或使用了旧版的对话导出 ZIP 文件，请前往 DeepSeek 重新导出历史对话文件后再次导入。</string>
+    <string name="history_imported_images_pending">对话已导入，但图片尚未恢复完成。请在「设置 → 数据」中重试，或重启应用。</string>
+    <string name="retry">重试</string>
+    <string name="images_restore_pending">导入的图片尚未恢复</string>
+    <string name="images_restored">图片已恢复</string>
+    <string name="images_restore_failed">图片恢复失败，请清理存储空间后重试。</string>
+    <string name="images_restoring_send">导入的图片尚未恢复完成，本条消息未发送。请在「设置 → 数据」中重试后重新生成。</string>
     <string name="history_export">导出所有历史对话</string>
     <string name="history_exported">导出成功</string>
     <string name="history_export_failed">导出失败：%1$s</string>
@@ -135,4 +148,24 @@
     <string name="backup_incomplete">文件内容不完整，无法导入</string>
     <string name="backup_invalid_branches">文件中的消息分支已损坏，无法导入</string>
     <string name="backup_invalid_files">文件中的附件数据已损坏，无法导入</string>
+    <string name="backup_link_invalid">不是有效的下载链接</string>
+    <string name="backup_link_expired">下载链接已失效，请在 DeepSeek App 中重新导出</string>
+    <string name="backup_download_failed">下载失败，请检查网络后重试</string>
+
+    <!-- 语音对话 -->
+    <string name="voice_chat">语音对话</string>
+    <string name="voice_connecting">正在连接</string>
+    <string name="voice_listening">正在聆听</string>
+    <string name="voice_thinking">思考中</string>
+    <string name="voice_speaking">说话中</string>
+    <string name="voice_muted">已静音</string>
+    <string name="voice_mute">静音</string>
+    <string name="voice_unmute">取消静音</string>
+    <string name="voice_hang_up">挂断</string>
+    <string name="voice_captions">字幕</string>
+    <string name="voice_no_recognizer">设备上没有可用的语音识别服务</string>
+    <string name="voice_no_synthesizer">设备上没有可用的语音合成引擎</string>
+    <string name="voice_permission">需要麦克风权限，点按光球授权</string>
+    <string name="voice_network">语音识别网络不可用，点按光球重试</string>
+    <string name="voice_reply_failed">回复失败，请再说一次</string>
 </resources>

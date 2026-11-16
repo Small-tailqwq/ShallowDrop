@@ -1,5 +1,7 @@
 package io.github.smalltailqwq.shallowdrop.domain.chat
 
+import io.github.smalltailqwq.shallowdrop.domain.voice.voiceSystemPrompt
+
 import android.net.Uri
 import io.github.smalltailqwq.shallowdrop.core.contract.AttachmentStore
 import io.github.smalltailqwq.shallowdrop.core.contract.ChatApi
@@ -78,6 +80,11 @@ class ChatEngine(
     private val systemLocale: () -> Locale = { Locale.getDefault() },
     private val persistIntervalMs: Long = PERSIST_INTERVAL_MS,
     private val fileRetryBaseDelayMs: Long = FILE_RETRY_BASE_DELAY_MS,
+    /**
+     * 有附件既没有 file_id、本地也取不到原件时调用：尝试完成导入图片的恢复，返回图片是否已全部就绪。
+     * 返回 false 表示原件只是暂时不可用（导入已提交、图片待恢复），本次不发请求。
+     */
+    private val restoreAttachments: suspend () -> Boolean = { true },
 ) : ChatRepository {
 
     companion object {
@@ -124,6 +131,8 @@ class ChatEngine(
         val history: List<Message>,
         val question: Message.User,
         val prefix: Message.Assistant? = null,
+        /** 语音对话轮次，system 追加语音模式说明 */
+        val voice: Boolean = false,
     )
 
     private val cache = MutableStateFlow<Map<String, Session>>(emptyMap())
@@ -378,7 +387,7 @@ class ChatEngine(
                 val (old, new) = updateCached(base.id, build) ?: error("Session ${base.id} not loaded")
                 persistDiff(old, new)
             }
-            startGeneration(base.id, reply, Request(history, question), titleRequested = base.title.isEmpty())
+            startGeneration(base.id, reply, Request(history, question, voice = options.voice), titleRequested = base.title.isEmpty())
             base.id
         }
     }
@@ -524,12 +533,15 @@ class ChatEngine(
      * 对应 Web 版导入时「停止生成、导入期间禁止修改会话」。
      */
     suspend fun <T> replaceAll(block: suspend () -> T): T {
-        val result = opMutex.withLock {
-            generations.values.toList().forEach { it.job.cancelAndJoin() }
-            block()
+        try {
+            return opMutex.withLock {
+                generations.values.toList().forEach { it.job.cancelAndJoin() }
+                block()
+            }
+        } finally {
+            // 失败或取消时数据也可能已被替换，一律刷新
+            withContext(NonCancellable) { invalidateCache() }
         }
-        invalidateCache()
-        return result
     }
 
     /** 启动时把库中残留的 Pending / Streaming 回复标为 Stopped（进程被杀时未能收尾）。 */
@@ -624,7 +636,11 @@ class ChatEngine(
                     )
                     val body = CreateMessageRequest(
                         model = initial.model ?: settings.settings.value.model,
-                        system = SYSTEM_PROMPT,
+                        system = if (request.voice) {
+                            SYSTEM_PROMPT + "\n\n" + voiceSystemPrompt(ReminderLocale.resolve(settings.settings.value.locale, systemLocale()))
+                        } else {
+                            SYSTEM_PROMPT
+                        },
                         messages = messages,
                         thinking = initial.thinking,
                         tools = serverTools(initial.search),
@@ -763,6 +779,9 @@ class ChatEngine(
      */
     private suspend fun prepareFiles(sessionId: String, original: Request): Request {
         val request = refresh(sessionId, original)
+        // 原件取不到时先确认不是「导入图片待恢复」：恢复完成则照常补传，仍未就绪则不发请求，避免悄悄漏掉图片。
+        // 恢复就绪后仍没有原件的附件（归档里本来就缺）按原规则只展示、不进入请求。
+        if (lacksOriginal(request) && !restoreAttachments()) throw AttachmentsRestoringException()
         val apiKey = settings.apiKey().orEmpty()
         val serverIds = HashMap<String, String>()
         val tasks = request.question.files.map { it to ensureServerId(sessionId, apiKey, it) }
@@ -792,6 +811,12 @@ class ChatEngine(
         }
         // 用补齐后的会话重新取历史与提问，保证请求里都是 serverId
         return refresh(sessionId, request)
+    }
+
+    /** 本次请求会用到的附件里，是否有既没有 file_id、本地也没有原件的 */
+    private fun lacksOriginal(request: Request): Boolean {
+        val files = request.question.files + contextRounds(request.history).flatMap { it.first.files }
+        return files.any { it.serverId == null && uploaded[it.id] == null && attachments.file(it.id) == null }
     }
 
     /**

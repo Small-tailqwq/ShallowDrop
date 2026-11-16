@@ -11,7 +11,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -25,12 +28,14 @@ import io.github.smalltailqwq.shallowdrop.ui.settings.LicenseScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.SettingsScreen
 import io.github.smalltailqwq.shallowdrop.ui.theme.ShallowDropTheme
 import io.github.smalltailqwq.shallowdrop.ui.theme.isAppInDarkTheme
+import io.github.smalltailqwq.shallowdrop.ui.voice.VoiceScreen
 import kotlinx.serialization.Serializable
 
 /*
  * 导航（类型安全路由）：
  *   OnboardingRoute —— 首次无 Key 时的引导页
  *   ChatRoute       —— 对话页（会话切换在页内完成，不进返回栈）
+ *   VoiceRoute      —— 语音对话，挂断后回到对话页并打开写入的会话
  *   SettingsGraph   —— SettingsRoute、LicenseRoute
  */
 
@@ -49,6 +54,10 @@ data object SettingsRoute
 @Serializable
 data object LicenseRoute
 
+/** 语音对话；sessionId 为 null 时首轮新建会话 */
+@Serializable
+data class VoiceRoute(val sessionId: String? = null)
+
 private const val DURATION = 220
 
 /** 根组件：主题 + 导航。onDarkThemeChange 用于同步系统栏图标颜色。 */
@@ -62,13 +71,13 @@ fun ShallowDropApp(deps: UiDependencies, onDarkThemeChange: (Boolean) -> Unit = 
     ShallowDropTheme(darkTheme = dark) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             // 设置读完前不决定起始页面，避免已有 Key 时闪现引导页
-            if (loaded) AppNavHost(hasApiKey = settings.hasApiKey)
+            if (loaded) AppNavHost(hasApiKey = settings.hasApiKey, deps = deps)
         }
     }
 }
 
 @Composable
-private fun AppNavHost(hasApiKey: Boolean) {
+private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
     val navController = rememberNavController()
     val start: Any = remember { if (hasApiKey) ChatRoute else OnboardingRoute }
 
@@ -76,6 +85,20 @@ private fun AppNavHost(hasApiKey: Boolean) {
     LaunchedEffect(hasApiKey) {
         if (!hasApiKey && navController.hasInBackStack<ChatRoute>()) {
             navController.navigate(OnboardingRoute) { popUpTo(0) { inclusive = true } }
+        }
+    }
+
+    // 语音对话写入的会话，回到对话页时打开
+    var voiceSession by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // 外部打开或分享进来的 ZIP：转到设置页由其确认导入
+    val incomingImport by deps.incomingImport.collectAsStateWithLifecycle()
+    LaunchedEffect(incomingImport) {
+        if (incomingImport == null) return@LaunchedEffect
+        if (navController.hasInBackStack<SettingsRoute>()) {
+            navController.popBackStack<SettingsRoute>(inclusive = false)
+        } else {
+            navController.navigate(SettingsGraph) { launchSingleTop = true }
         }
     }
 
@@ -96,13 +119,28 @@ private fun AppNavHost(hasApiKey: Boolean) {
             )
         }
         composable<ChatRoute> {
-            ChatScreen(onOpenSettings = { navController.navigate(SettingsGraph) { launchSingleTop = true } })
+            ChatScreen(
+                onOpenSettings = { navController.navigate(SettingsGraph) { launchSingleTop = true } },
+                onOpenVoice = { navController.navigate(VoiceRoute(it)) { launchSingleTop = true } },
+                openSession = voiceSession,
+                onOpenSessionHandled = { voiceSession = null },
+            )
+        }
+        composable<VoiceRoute> {
+            VoiceScreen(
+                onClose = { sessionId ->
+                    if (sessionId != null) voiceSession = sessionId
+                    navController.popBackStack()
+                },
+            )
         }
         navigation<SettingsGraph>(startDestination = SettingsRoute) {
             composable<SettingsRoute> {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
                     onOpenLicense = { navController.navigate(LicenseRoute) },
+                    incomingImport = incomingImport,
+                    onIncomingImportHandled = { deps.incomingImport.value = null },
                 )
             }
             composable<LicenseRoute> {

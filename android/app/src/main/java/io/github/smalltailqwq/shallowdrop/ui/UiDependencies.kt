@@ -1,13 +1,19 @@
 package io.github.smalltailqwq.shallowdrop.ui
 
 import android.app.Application
+import android.net.Uri
 import io.github.smalltailqwq.shallowdrop.App
 import io.github.smalltailqwq.shallowdrop.core.contract.ChatRepository
+import io.github.smalltailqwq.shallowdrop.core.contract.ExportLinkDownloader
 import io.github.smalltailqwq.shallowdrop.core.contract.HistoryBackup
 import io.github.smalltailqwq.shallowdrop.core.contract.SettingsRepository
 import io.github.smalltailqwq.shallowdrop.core.model.ApiException
 import io.github.smalltailqwq.shallowdrop.core.model.ReplyErrorKind
 import io.github.smalltailqwq.shallowdrop.data.settings.DataStoreSettingsRepository
+import io.github.smalltailqwq.shallowdrop.data.voice.AndroidSpeechInput
+import io.github.smalltailqwq.shallowdrop.data.voice.AndroidSpeechOutput
+import io.github.smalltailqwq.shallowdrop.domain.voice.SpeechInput
+import io.github.smalltailqwq.shallowdrop.domain.voice.SpeechOutput
 import io.github.smalltailqwq.shallowdrop.ui.fake.FakeChatRepository
 import io.github.smalltailqwq.shallowdrop.ui.fake.FakeHistoryBackup
 import kotlinx.coroutines.delay
@@ -24,11 +30,20 @@ class UiDependencies(
     val settingsRepository: SettingsRepository,
     val chatRepository: ChatRepository,
     val historyBackup: HistoryBackup,
+    /** 下载官方 App 导出的历史对话链接 */
+    val exportLinkDownloader: ExportLinkDownloader,
     /** 校验 API Key（GET /models）；失败抛 ApiException */
     val verifyApiKey: suspend (String) -> Unit,
     /** 设置首次读取完成；之前不决定起始页面 */
     val settingsLoaded: StateFlow<Boolean>,
+    /** 语音对话的识别（无状态，可共用） */
+    val speechInput: SpeechInput,
+    /** 语音对话的合成；每次进入语音页新建，离开时释放 */
+    val createSpeechOutput: () -> SpeechOutput,
 ) {
+    /** 从其他应用「打开方式 / 分享」进来的历史对话 ZIP，设置页接手后置空 */
+    val incomingImport = MutableStateFlow<Uri?>(null)
+
     companion object {
         /** 集成切换点：true 时对话与历史使用 Fake */
         const val USE_FAKE = false
@@ -46,8 +61,11 @@ class UiDependencies(
                     settingsRepository = settings,
                     chatRepository = FakeChatRepository(application),
                     historyBackup = FakeHistoryBackup(application),
+                    exportLinkDownloader = (application as App).container.exportLinkDownloader,
                     verifyApiKey = ::fakeVerify,
                     settingsLoaded = settings.loaded,
+                    speechInput = AndroidSpeechInput(application),
+                    createSpeechOutput = { AndroidSpeechOutput(application) },
                 )
             }
             val container = (application as App).container
@@ -56,8 +74,11 @@ class UiDependencies(
                 settingsRepository = settings,
                 chatRepository = container.chatRepository,
                 historyBackup = container.historyBackup,
+                exportLinkDownloader = container.exportLinkDownloader,
                 verifyApiKey = { container.chatApi.verifyApiKey(it) },
                 settingsLoaded = settings.loaded,
+                speechInput = AndroidSpeechInput(application),
+                createSpeechOutput = { AndroidSpeechOutput(application) },
             )
         }
 
