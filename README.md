@@ -8,6 +8,8 @@ A lightweight native Android client for DeepSeek, built with Kotlin and Jetpack 
 
 Download and install the APK from the [0.1.0 release page](https://github.com/Small-tailqwq/ShallowDrop/releases/tag/v0.1.0). Android 8.0 or later is required; the universal APK supports arm64-v8a, armeabi-v7a, x86 and x86_64.
 
+The [0.1.1 preview](https://github.com/Small-tailqwq/ShallowDrop/releases/tag/v0.1.1-preview.1) adds experimental cross-conversation memory, disabled by default. Enable it in Settings → General → Memory. It increases API usage and may affect response quality; see the [memory guide](docs/android/memory.md) for usage and limitations.
+
 ## Features
 
 - Streaming conversations, thinking, web search and references.

@@ -8,6 +8,8 @@
 
 从 [0.1.0 发布页面](https://github.com/Small-tailqwq/ShallowDrop/releases/tag/v0.1.0) 下载并安装 APK。最低支持 Android 8.0；通用 APK 包含 arm64-v8a、armeabi-v7a、x86 和 x86_64。
 
+[0.1.1 预览版](https://github.com/Small-tailqwq/ShallowDrop/releases/tag/v0.1.1-preview.1)新增实验性跨对话记忆，默认关闭，可在「设置 → 通用 → 记忆」开启。开启后会增加 API 用量，并可能影响回答效果；用法和限制见[记忆说明](docs/android/memory.md)。
+
 ## 功能
 
 - 流式对话、思考、联网搜索与引用。
