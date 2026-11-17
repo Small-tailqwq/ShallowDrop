@@ -1,6 +1,6 @@
 # Android 许可证与版权
 
-ShallowDrop 默认采用 [MIT](../../LICENSE)，保留 `Copyright (c) 2026 DeepSeek`，并注明 ShallowDrop 贡献者的修改。文件单独标注的许可和第三方资源继续适用各自条款。
+ShallowDrop 默认采用 [MIT](../../LICENSE)，版权署名为 `Copyright (c) 2026 Small-tailqwq`，同时保留上游 `Copyright (c) 2026 DeepSeek`。文件单独标注的许可和第三方资源继续适用各自条款。
 
 ## 随包组件
 
