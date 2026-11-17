@@ -7,6 +7,7 @@ import io.github.smalltailqwq.shallowdrop.App
 import io.github.smalltailqwq.shallowdrop.core.contract.ChatRepository
 import io.github.smalltailqwq.shallowdrop.core.contract.ExportLinkDownloader
 import io.github.smalltailqwq.shallowdrop.core.contract.HistoryBackup
+import io.github.smalltailqwq.shallowdrop.core.contract.MemoryRepository
 import io.github.smalltailqwq.shallowdrop.core.contract.SettingsRepository
 import io.github.smalltailqwq.shallowdrop.core.model.ApiException
 import io.github.smalltailqwq.shallowdrop.core.model.ReplyErrorKind
@@ -51,6 +52,7 @@ class UiDependencies(
     val speechInput: SpeechInput,
     /** 语音对话的合成；每次进入语音页新建，离开时释放 */
     val createSpeechOutput: () -> SpeechOutput,
+    val memoryRepository: MemoryRepository,
     /** 附件本地原件，用于消息里的图片缩略图 */
     val attachmentFile: (String) -> File? = { null },
 ) {
@@ -80,6 +82,7 @@ class UiDependencies(
                     locate = (application as App).container.locationProvider::locate,
                     speechInput = speechInput(application, (application as App).container.speechApi, settings),
                     createSpeechOutput = { speechOutput(application, (application as App).container.speechApi, settings) },
+                    memoryRepository = (application as App).container.memoryRepository,
                 )
             }
             val container = (application as App).container
@@ -94,6 +97,7 @@ class UiDependencies(
                 locate = container.locationProvider::locate,
                 speechInput = speechInput(application, container.speechApi, settings),
                 createSpeechOutput = { speechOutput(application, container.speechApi, settings) },
+                memoryRepository = container.memoryRepository,
                 attachmentFile = container.attachmentStore::file,
             )
         }

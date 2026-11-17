@@ -31,6 +31,7 @@ import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import io.github.smalltailqwq.shallowdrop.ui.chat.ChatScreen
 import io.github.smalltailqwq.shallowdrop.ui.components.LocalAttachmentFile
+import io.github.smalltailqwq.shallowdrop.ui.memory.MemoryScreen
 import io.github.smalltailqwq.shallowdrop.ui.onboarding.OnboardingScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.FontSizeScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.LicenseScreen
@@ -54,7 +55,7 @@ import kotlinx.serialization.Serializable
  *   ChatRoute       —— 对话页（会话切换在页内完成，不进返回栈）
  *   SearchRoute     —— 搜索会话（标题、消息、文件名），选中后回到对话页并打开
  *   VoiceRoute      —— 语音对话，挂断后回到对话页并打开写入的会话
- *   SettingsGraph   —— 设置、关于、免责声明、开源许可、充值、字号和回复滑动
+ *   SettingsGraph   —— 设置、关于、免责声明、开源许可、充值、字号、回复滑动和记忆
  */
 
 @Serializable
@@ -90,6 +91,9 @@ data object FontSizeRoute
 
 @Serializable
 data object ReplySwipeRoute
+
+@Serializable
+data object MemoryRoute
 
 /** 语音对话；sessionId 为 null 时首轮新建会话 */
 @Serializable
@@ -204,6 +208,7 @@ private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
                     onOpenRecharge = { navController.navigate(RechargeRoute) { launchSingleTop = true } },
                     onOpenFontSize = { navController.navigate(FontSizeRoute) { launchSingleTop = true } },
                     onOpenReplySwipe = { navController.navigate(ReplySwipeRoute) { launchSingleTop = true } },
+                    onOpenMemory = { navController.navigate(MemoryRoute) { launchSingleTop = true } },
                     incomingImport = incomingImport,
                     onIncomingImportHandled = { deps.incomingImport.value = null },
                 )
@@ -228,6 +233,17 @@ private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
                     initial = remember { settings.replySwipe },
                     onSave = settingsViewModel::setReplySwipe,
                     onBack = { navController.popBackStack() },
+                )
+            }
+            composable<MemoryRoute> {
+                MemoryScreen(
+                    onBack = { navController.popBackStack() },
+                    // 回到对话页并定位到那句原话，沿用搜索结果的打开方式
+                    onOpenConversation = { sessionId, messageId ->
+                        if (navController.popBackStack<ChatRoute>(inclusive = false)) {
+                            searchTarget = SearchTarget(sessionId, messageId, "")
+                        }
+                    },
                 )
             }
             composable<AboutRoute> {

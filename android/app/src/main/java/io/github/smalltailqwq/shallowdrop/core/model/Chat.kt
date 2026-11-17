@@ -1,5 +1,7 @@
 package io.github.smalltailqwq.shallowdrop.core.model
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
@@ -156,6 +158,13 @@ sealed interface Message {
         val search: Boolean = false,
         /** 本轮请求的系统信息快照；续写沿用 */
         val latestReminder: String? = null,
+        /**
+         * 本轮提问开头的「当前情况」快照（时间、时区、位置）；之后的请求原样回放，续写沿用。
+         * 为 null 时任何配置下都不写出：上下文摘要的指纹按 encodeDefaults 计算，多出一个字段会让已有摘要全部失效。
+         */
+        @OptIn(ExperimentalSerializationApi::class)
+        @EncodeDefault(EncodeDefault.Mode.NEVER)
+        val currentState: String? = null,
         /** 是否允许作为续写前缀；导入的回复为 false */
         val prefix: Boolean = false,
         val status: ReplyStatus,

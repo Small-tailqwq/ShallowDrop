@@ -123,6 +123,8 @@ class SettingsViewModel(
 
     fun setModel(model: ChatModel) = viewModelScope.launch { settingsRepository.setModel(model) }
 
+    fun setShareTime(enabled: Boolean) = viewModelScope.launch { settingsRepository.setShareTime(enabled) }
+
     val savingCompaction = MutableStateFlow(false)
 
     fun setCompactionSettings(thresholds: CompactionThresholds, enabled: Boolean, onSaved: () -> Unit) {

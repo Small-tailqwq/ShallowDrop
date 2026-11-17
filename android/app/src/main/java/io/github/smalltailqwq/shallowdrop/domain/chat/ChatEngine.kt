@@ -92,6 +92,12 @@ class ChatEngine(
      * 返回 false 表示原件只是暂时不可用（导入已提交、图片待恢复），本次不发请求。
      */
     private val restoreAttachments: suspend () -> Boolean = { true },
+    /** 追加到 system 的跨对话记忆（见 domain/memory）；参数为发请求的会话，未开启或没有记忆时返回 null */
+    private val memoryBlock: suspend (sessionId: String) -> String? = { null },
+    /** 回复完成或被停止后调用，用于安排记忆整理 */
+    private val onReplyFinished: (sessionId: String) -> Unit = {},
+    /** 会话被删除后调用；null 表示全部会话被删除或整体替换 */
+    private val onSessionsRemoved: suspend (sessionId: String?) -> Unit = {},
 ) : ChatRepository {
 
     companion object {
@@ -648,6 +654,7 @@ class ChatEngine(
             compaction.cancel(sessionId)
             store.delete(sessionId)
             cache.update { it - sessionId }
+            onSessionsRemoved(sessionId)
         }
     }
 
@@ -660,6 +667,7 @@ class ChatEngine(
             store.deleteAll()
             cache.value = emptyMap()
             uploaded.clear()
+            onSessionsRemoved(null)
         }
     }
 
@@ -672,7 +680,7 @@ class ChatEngine(
             return opMutex.withLock {
                 generations.values.toList().forEach { it.job.cancelAndJoin() }
                 compaction.clear()
-                block()
+                block().also { onSessionsRemoved(null) }
             }
         } finally {
             // 失败或取消时数据也可能已被替换，一律刷新
@@ -751,30 +759,41 @@ class ChatEngine(
                     val prepared = prepareFiles(sessionId, currentRequest.copy(history = context.history))
                     preparing = false
                     // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
-                    val latestReminder = if (prepared.prefix != null) {
-                        prepared.prefix.latestReminder
+                    val (latestReminder, currentState) = if (prepared.prefix != null) {
+                        prepared.prefix.latestReminder to prepared.prefix.currentState
                     } else {
                         val currentSettings = settings.settings.value
                         val locale = ReminderLocale.resolve(currentSettings.locale, systemLocale())
                         val location = settings.settings.map { it.location }.distinctUntilChanged()
                             .mapLatest { resolveLocation(it, locale.javaLocale) }.first()
-                        createLatestReminder(locale, clock(), zone(), location)
+                        val now = clock()
+                        createLatestReminder(locale, now, zone(), location) to
+                            createCurrentState(locale, now, zone(), location, includeTime = currentSettings.shareTime)
                     }
-                    reply = reply.copy(latestReminder = latestReminder, contextSummaryId = context.summary?.sourceHash)
+                    reply = reply.copy(latestReminder = latestReminder, currentState = currentState, contextSummaryId = context.summary?.sourceHash)
                     writeReply(sessionId, reply, persist = true)
                     val messages = context.copy(history = prepared.history).messages(
                         prepared.question,
                         prepared.prefix,
                         initial.thinking,
                         latestReminder,
+                        currentState,
                     )
+                    // 记忆读取失败不影响本轮回答
+                    val memory = try {
+                        memoryBlock(sessionId)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
                     val body = CreateMessageRequest(
                         model = model,
-                        system = if (request.voice) {
-                            SYSTEM_PROMPT + "\n\n" + voiceSystemPrompt(ReminderLocale.resolve(settings.settings.value.locale, systemLocale()))
-                        } else {
-                            SYSTEM_PROMPT
-                        },
+                        system = listOfNotNull(
+                            SYSTEM_PROMPT,
+                            if (request.voice) voiceSystemPrompt(ReminderLocale.resolve(settings.settings.value.locale, systemLocale())) else null,
+                            memory,
+                        ).joinToString("\n\n"),
                         messages = messages,
                         thinking = initial.thinking,
                         tools = serverTools(initial.search),
@@ -857,6 +876,7 @@ class ChatEngine(
         } finally {
             withContext(NonCancellable) { writeReply(sessionId, reply, persist = true) }
         }
+        if (reply.status == ReplyStatus.Done || reply.status == ReplyStatus.Stopped) onReplyFinished(sessionId)
         if (reply.status == ReplyStatus.Done && currentCoroutineContext().isActive) {
             cache.value[sessionId]?.let { session ->
                 compaction.maybeStart(sessionId, visibleMessages(session), initial.model ?: settings.settings.value.model)

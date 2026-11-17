@@ -191,12 +191,14 @@ fun contextRounds(history: List<Message>): List<Pair<Message.User, Assistant>> {
  * 有文件时用内容块数组：先文件后文本。没有文件时为单个文本块
  * （Web 版此时 content 为字符串，契约只有列表形式，序列化方可按需压缩成字符串）。
  */
-private fun toUserParam(user: Message.User): MessageParam.User {
+private fun toUserParam(user: Message.User, currentState: String? = null): MessageParam.User {
     val blocks = toFileBlocks(user.files)
+    // 「当前情况」单独一个文本块，放在文件之后、用户文字之前
+    val state = if (currentState.isNullOrEmpty()) emptyList() else listOf(UserContentParam.Text(currentState))
     return if (blocks.isEmpty()) {
-        MessageParam.User(listOf(UserContentParam.Text(user.content)))
+        MessageParam.User(state + UserContentParam.Text(user.content))
     } else {
-        MessageParam.User(blocks + if (user.content.isNotEmpty()) listOf(UserContentParam.Text(user.content)) else emptyList())
+        MessageParam.User(blocks + state + if (user.content.isNotEmpty()) listOf(UserContentParam.Text(user.content)) else emptyList())
     }
 }
 
@@ -348,6 +350,8 @@ fun toRequestMessages(
     prefix: Assistant? = null,
     thinking: Boolean = prefix?.thinking ?: false,
     latestReminder: String? = null,
+    /** 本轮提问的「当前情况」；历史轮次用各自回复里保存的快照 */
+    currentState: String? = null,
 ): List<MessageParam> {
     val messages = ArrayList<MessageParam>()
     var previousReminder: String? = null
@@ -362,13 +366,13 @@ fun toRequestMessages(
         // 历史提问没有文字、附件也都没有 serverId 时，提问为空，连同回答一起省略。
         if (user.content.isEmpty() && toFileBlocks(user.files).isEmpty()) continue
         appendReminder(reply.latestReminder)
-        messages.add(toUserParam(user))
+        messages.add(toUserParam(user, reply.currentState))
         messages.add(toAssistantParam(reply))
     }
     // 本轮快照始终紧贴本轮提问，即使与历史快照相同（与 Web 版去重不同）：
     // 深度思考模式下模型不会回看排在早期轮次前的快照，日期、位置会被当成未知。
     if (!latestReminder.isNullOrEmpty()) messages.add(MessageParam.LatestReminder(latestReminder))
-    messages.add(toUserParam(question))
+    messages.add(toUserParam(question, currentState))
     if (prefix != null && prefix.prefix) {
         val assistant = toAssistantParam(prefix, prefix = true, thinking = thinking)
         // 没有非空白正文或有效思考时直接重发原问题，避免服务端拒绝空 Prefill。

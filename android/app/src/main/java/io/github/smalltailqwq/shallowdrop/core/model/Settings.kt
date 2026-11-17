@@ -52,4 +52,8 @@ data class AppSettings(
     val replySwipe: ReplySwipeSettings = ReplySwipeSettings(),
     val compactionThresholds: CompactionThresholds = CompactionThresholds(),
     val compactionEnabled: Boolean = true,
+    /** 随每条提问发送当前时刻与时区（见 domain/chat/CurrentState.kt）；关闭后只有 latest_reminder 里的日期 */
+    val shareTime: Boolean = true,
+    /** 跨对话记忆（实验性），默认关闭 */
+    val memoryEnabled: Boolean = false,
 )

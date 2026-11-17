@@ -10,6 +10,8 @@ import io.github.smalltailqwq.shallowdrop.core.model.CreateMessageRequest
 import io.github.smalltailqwq.shallowdrop.core.model.FileAttachment
 import io.github.smalltailqwq.shallowdrop.core.model.FileObject
 import io.github.smalltailqwq.shallowdrop.core.model.FilePurpose
+import io.github.smalltailqwq.shallowdrop.core.model.MemoryExchange
+import io.github.smalltailqwq.shallowdrop.core.model.MemoryState
 import io.github.smalltailqwq.shallowdrop.core.model.Message
 import io.github.smalltailqwq.shallowdrop.core.model.MessageStreamEvent
 import io.github.smalltailqwq.shallowdrop.core.model.Session
@@ -184,6 +186,37 @@ interface SettingsRepository {
 
     /** 语音对话与朗读的音色；默认空实现便于测试替身 */
     suspend fun setTtsVoice(voice: TtsVoice) = Unit
+
+    suspend fun setMemoryEnabled(enabled: Boolean) = Unit
+
+    suspend fun setShareTime(enabled: Boolean) = Unit
+}
+
+/** 记忆的持久化：整份读写。 */
+interface MemoryStore {
+    suspend fun load(): MemoryState
+
+    suspend fun save(state: MemoryState)
+}
+
+/** UI 使用的记忆接口；实现见 domain/memory。请求模型失败抛 ApiException。 */
+interface MemoryRepository {
+    val memory: StateFlow<MemoryState>
+
+    /** 正在整理对话 */
+    val updating: StateFlow<Boolean>
+
+    suspend fun add(text: String)
+
+    suspend fun edit(entryId: String, text: String)
+
+    suspend fun remove(entryId: String)
+
+    /** 清空记忆与全部来源记录 */
+    suspend fun clear()
+
+    /** 就记忆及其原话提问；用户在提问中要求的增删改会直接生效并随回答返回。 */
+    suspend fun ask(question: String, previous: List<MemoryExchange>): MemoryExchange
 }
 
 /** 当前路径上的一条消息及其兄弟分支信息（用于 `< 2/3 >` 切换）。 */

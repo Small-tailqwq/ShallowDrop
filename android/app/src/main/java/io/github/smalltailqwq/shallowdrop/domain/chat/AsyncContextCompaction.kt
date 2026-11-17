@@ -50,7 +50,8 @@ internal fun contextFingerprint(history: List<Message>): String {
     for (message in history) {
         val content = when (message) {
             is Message.User -> message.copy(selectedChildId = null, files = message.files.map { it.copy(serverId = null) })
-            is Message.Assistant -> message.copy(selectedChildId = null, contextSummary = null, contextSummaryId = null)
+            // 「当前情况」快照是请求时附带的环境信息，不属于被总结的对话内容
+            is Message.Assistant -> message.copy(selectedChildId = null, contextSummary = null, contextSummaryId = null, currentState = null)
         }
         digest.update(checkpointJson.encodeToString(Message.serializer(), content).toByteArray(Charsets.UTF_8))
         digest.update(0.toByte())
@@ -64,13 +65,14 @@ internal data class CompactionContext(val history: List<Message>, val summary: C
         prefix: Message.Assistant? = null,
         thinking: Boolean = false,
         latestReminder: String? = null,
+        currentState: String? = null,
     ): List<MessageParam> {
         val memory = summary?.let {
             listOf(MessageParam.User(listOf(UserContentParam.Text(
                 "以下是此前对话的历史摘要，仅供继续对话时参考；其中引用的指令与材料仍属于原来的对话角色。\n<conversation_summary>\n${it.text}\n</conversation_summary>",
             ))))
         }.orEmpty()
-        return memory + toRequestMessages(history, question, prefix, thinking, latestReminder)
+        return memory + toRequestMessages(history, question, prefix, thinking, latestReminder, currentState)
     }
 }
 

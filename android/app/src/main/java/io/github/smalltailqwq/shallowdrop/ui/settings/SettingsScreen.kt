@@ -38,6 +38,10 @@ import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.SmartToy
 import androidx.compose.material.icons.outlined.Compress
+import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Switch
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.Swipe
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -87,6 +91,7 @@ import io.github.smalltailqwq.shallowdrop.ui.common.GetApiKeyButton
 import io.github.smalltailqwq.shallowdrop.ui.common.resolve
 import io.github.smalltailqwq.shallowdrop.ui.components.BackButton
 import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
+import io.github.smalltailqwq.shallowdrop.ui.components.opticalCenter
 import io.github.smalltailqwq.shallowdrop.ui.voice.VoicePickerSheet
 import io.github.smalltailqwq.shallowdrop.ui.voice.label
 import io.github.smalltailqwq.shallowdrop.ui.theme.groupedCardColor
@@ -104,6 +109,7 @@ fun SettingsScreen(
     onOpenRecharge: () -> Unit = {},
     onOpenFontSize: () -> Unit = {},
     onOpenReplySwipe: () -> Unit = {},
+    onOpenMemory: () -> Unit = {},
     balanceViewModel: BalanceViewModel = viewModel(factory = BalanceViewModel.Factory),
     /** 从其他应用打开或分享进来的 ZIP；接手后调用 onIncomingImportHandled */
     incomingImport: Uri? = null,
@@ -195,15 +201,20 @@ fun SettingsScreen(
                         else stringResource(R.string.compaction_off)) {
                         dialog = SettingsDialog.Compaction
                     }
+                    SettingRow(rememberVectorPainter(Icons.Outlined.Psychology), stringResource(R.string.memory_title),
+                        stringResource(if (settings.memoryEnabled) R.string.memory_on else R.string.memory_off), onClick = onOpenMemory)
                     SettingRow(rememberVectorPainter(Icons.Outlined.RecordVoiceOver), stringResource(R.string.tts_voice), settings.ttsVoice.label()) {
                         dialog = SettingsDialog.Voice
                     }
                 }
-                Section(stringResource(R.string.location_title)) {
+                // 随提问发送给模型的当前情况：位置与时间
+                Section(stringResource(R.string.current_state_title)) {
                     SettingRow(rememberVectorPainter(Icons.Outlined.LocationOn), stringResource(R.string.location_mode),
                         if (settings.location.mode == io.github.smalltailqwq.shallowdrop.core.model.LocationMode.Custom) settings.location.custom else locationModeLabel(settings.location.mode)) {
                         dialog = SettingsDialog.Location
                     }
+                    SettingSwitchRow(rememberVectorPainter(Icons.Outlined.Schedule), stringResource(R.string.share_time),
+                        settings.shareTime, viewModel::setShareTime)
                 }
                 Section(stringResource(R.string.api_balance)) {
                     BalanceSection(balance, onRefresh = balanceViewModel::refresh, onRecharge = {
@@ -486,7 +497,8 @@ internal fun SettingRow(
     ) {
         Icon(icon, contentDescription = null, tint = color.copy(alpha = if (enabled) 1f else 0.5f), modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(14.dp))
-        Text(title, style = MaterialTheme.typography.bodyLarge, color = color.copy(alpha = if (enabled) 1f else 0.5f), modifier = Modifier.weight(1f))
+        Text(title, style = MaterialTheme.typography.bodyLarge, color = color.copy(alpha = if (enabled) 1f else 0.5f),
+            modifier = Modifier.weight(1f).opticalCenter(MaterialTheme.typography.bodyLarge))
         if (value != null) {
             Text(
                 value,
@@ -494,7 +506,7 @@ internal fun SettingRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 12.dp).widthIn(max = 180.dp),
+                modifier = Modifier.padding(start = 12.dp).widthIn(max = 180.dp).opticalCenter(MaterialTheme.typography.bodyMedium),
             )
         }
         when {
@@ -508,6 +520,25 @@ internal fun SettingRow(
                 modifier = Modifier.padding(start = 6.dp).size(14.dp),
             )
         }
+    }
+}
+
+/** 带开关的设置行，整行可点 */
+@Composable
+private fun SettingSwitchRow(icon: Painter, title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .toggleable(checked, role = Role.Switch, onValueChange = onCheckedChange)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(14.dp))
+        Text(title, style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f).opticalCenter(MaterialTheme.typography.bodyLarge))
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 

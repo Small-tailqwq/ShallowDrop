@@ -2,6 +2,7 @@ package io.github.smalltailqwq.shallowdrop
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import io.github.smalltailqwq.shallowdrop.core.contract.AttachmentStore
 import io.github.smalltailqwq.shallowdrop.core.contract.ChatApi
 import io.github.smalltailqwq.shallowdrop.core.contract.ChatRepository
@@ -9,7 +10,10 @@ import io.github.smalltailqwq.shallowdrop.core.contract.ExportLinkDownloader
 import io.github.smalltailqwq.shallowdrop.core.contract.HistoryBackup
 import io.github.smalltailqwq.shallowdrop.core.contract.ImportProgress
 import io.github.smalltailqwq.shallowdrop.core.contract.ImportResult
+import io.github.smalltailqwq.shallowdrop.core.contract.MemoryRepository
 import io.github.smalltailqwq.shallowdrop.core.contract.SessionStore
+import io.github.smalltailqwq.shallowdrop.data.memory.FileMemoryStore
+import io.github.smalltailqwq.shallowdrop.domain.memory.MemoryEngine
 import io.github.smalltailqwq.shallowdrop.data.api.DeepSeekApi
 import io.github.smalltailqwq.shallowdrop.data.api.DeepSeekSpeechApi
 import io.github.smalltailqwq.shallowdrop.data.api.defaultOkHttpClient
@@ -66,8 +70,21 @@ class AppContainer(context: Context) {
             resolveLocation = locationProvider::locate,
             // 发送前原件取不到时，先尝试补完导入图片的恢复
             restoreAttachments = { archiveBackup.retryImageRestore() },
+            memoryBlock = { sessionId ->
+                memoryEngine.settleOthers(sessionId)
+                memoryEngine.systemBlock()
+            },
+            onReplyFinished = memoryEngine::onReplyFinished,
+            onSessionsRemoved = memoryEngine::forgetSessions,
         )
     }
+
+    private val memoryEngine: MemoryEngine by lazy {
+        MemoryEngine(chatApi, sessionStore, FileMemoryStore(File(appContext.filesDir, "memory/memory.json")), settingsRepository, appScope,
+            log = { message, error -> Log.w("MemoryEngine", message, error) })
+    }
+
+    val memoryRepository: MemoryRepository get() = memoryEngine
 
     val chatRepository: ChatRepository get() = chatEngine
 
@@ -95,5 +112,6 @@ class AppContainer(context: Context) {
             // 失败时状态保持 Pending：设置页提示并可重试，发送带图消息前也会再试
             runCatching { archiveBackup.retryImageRestore() }
         }
+        memoryEngine.start()
     }
 }

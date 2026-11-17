@@ -42,3 +42,5 @@
 - 包结构与模块边界见 PLAN.md §3。`core/model` 中的领域模型是各模块的共享契约，改动需同步所有使用方。
 - 行为与 Web 版保持一致：协议细节、消息树规则、导入校验规则直接对照上面表格中的 TS 文件移植，并移植相应注释中的约束。
 - UI 遵循全局偏好：不加多余副标题、说明文字和 slogan，让布局说明用途。
+- 同一行里的文字、图标、标签和开关要在视觉上水平对齐。中文字形的视觉中心比行框中心低约 0.1em，只按行框居中会差一两个像素：单行文字加 `Modifier.opticalCenter(style)`，与可能换行的文字首行对齐的图标放进 `FirstLineAligned(style)`（均在 `ui/components/OpticalAlign.kt`），同一行不同字号的文字用 `alignByBaseline()`。改动界面后在模拟器截图上量各元素的垂直中心，偏差不超过 1 像素。
+- 跨对话记忆（实验性，默认关闭）：逻辑在 `domain/memory`，说明见 [docs/android/memory.md](docs/android/memory.md)。发给模型的信息分记忆、当前情况（每条提问开头的时间、时区、位置，`domain/chat/CurrentState.kt`）和对话三层，提示词只说明各层的性质，不为单个场景加规则。改动 `MemoryPrompts.kt` 或当前情况的格式后要重跑设备实测 `MemoryReliabilityTest` 和 `MemoryScenarioTest`。

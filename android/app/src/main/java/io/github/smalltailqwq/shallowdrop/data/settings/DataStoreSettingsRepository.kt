@@ -157,6 +157,14 @@ class DataStoreSettingsRepository(
         }
     }
 
+    override suspend fun setMemoryEnabled(enabled: Boolean) {
+        store.edit { it[Keys.MEMORY_ENABLED] = enabled }
+    }
+
+    override suspend fun setShareTime(enabled: Boolean) {
+        store.edit { it[Keys.SHARE_TIME] = enabled }
+    }
+
     private fun Preferences.toSettings(): AppSettings {
         val defaults = AppSettings()
         return AppSettings(
@@ -183,6 +191,8 @@ class DataStoreSettingsRepository(
                 this[Keys.COMPACTION_FOREGROUND] ?: defaults.compactionThresholds.foregroundPercent,
             ),
             compactionEnabled = this[Keys.COMPACTION_ENABLED] ?: defaults.compactionEnabled,
+            memoryEnabled = this[Keys.MEMORY_ENABLED] ?: defaults.memoryEnabled,
+            shareTime = this[Keys.SHARE_TIME] ?: defaults.shareTime,
         )
     }
 
@@ -209,6 +219,8 @@ class DataStoreSettingsRepository(
         val COMPACTION_BACKGROUND = intPreferencesKey("compaction_background_percent")
         val COMPACTION_ENABLED = booleanPreferencesKey("compaction_enabled")
         val COMPACTION_FOREGROUND = intPreferencesKey("compaction_foreground_percent")
+        val MEMORY_ENABLED = booleanPreferencesKey("memory_enabled")
+        val SHARE_TIME = booleanPreferencesKey("share_time")
     }
 
     private companion object {

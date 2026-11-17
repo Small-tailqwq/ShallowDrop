@@ -124,7 +124,8 @@ class FakeAttachmentStore(private val dir: File) : AttachmentStore {
     }
 }
 
-class FakeSettings(initial: AppSettings = AppSettings(hasApiKey = true, locale = AppLocale.ZhCN)) : SettingsRepository {
+/** 默认不发送时刻，已有用例里的请求内容保持不变；需要时用 setShareTime 打开。 */
+class FakeSettings(initial: AppSettings = AppSettings(hasApiKey = true, locale = AppLocale.ZhCN, shareTime = false)) : SettingsRepository {
     private val state = MutableStateFlow(initial)
     override val settings: StateFlow<AppSettings> = state
 
@@ -147,6 +148,10 @@ class FakeSettings(initial: AppSettings = AppSettings(hasApiKey = true, locale =
 
     override suspend fun setModel(model: ChatModel) = state.update { it.copy(model = model) }
     override suspend fun setCompactionSettings(thresholds: io.github.smalltailqwq.shallowdrop.core.model.CompactionThresholds, enabled: Boolean) = state.update { it.copy(compactionThresholds = thresholds, compactionEnabled = enabled) }
+
+    override suspend fun setMemoryEnabled(enabled: Boolean) = state.update { it.copy(memoryEnabled = enabled) }
+
+    override suspend fun setShareTime(enabled: Boolean) = state.update { it.copy(shareTime = enabled) }
 }
 
 // ---------- 事件构造 ----------
