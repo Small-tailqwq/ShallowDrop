@@ -4,9 +4,12 @@ import androidx.room.withTransaction
 import io.github.smalltailqwq.shallowdrop.core.contract.SessionStore
 import io.github.smalltailqwq.shallowdrop.core.contract.MessageMatch
 import io.github.smalltailqwq.shallowdrop.core.model.Message
+import io.github.smalltailqwq.shallowdrop.core.model.ConversationSnapshot
 import io.github.smalltailqwq.shallowdrop.core.model.ReplyBlock
 import io.github.smalltailqwq.shallowdrop.core.model.Session
 import io.github.smalltailqwq.shallowdrop.core.model.SessionSummary
+import io.github.smalltailqwq.shallowdrop.core.model.ServerToolInput
+import io.github.smalltailqwq.shallowdrop.core.model.conversationPath
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -29,6 +32,26 @@ class RoomSessionStore(
 
     override suspend fun load(sessionId: String): Session? = db.readSession(sessionId)
 
+    override suspend fun loadConversation(sessionId: String, selectedMessageId: String?): ConversationSnapshot? = db.withTransaction {
+        val row = dao.session(sessionId) ?: return@withTransaction null
+        val path = conversationPath(row.rootMessageId, dao.branches(sessionId), selectedMessageId)
+            ?: return@withTransaction null
+        val selected = path.branches.associateBy { it.id }
+        val messages = HashMap<String, Message>(path.messageIds.size)
+        // 旧 Android 的 SQLite 最多接受 999 个绑定参数，另留一个给 sessionId。
+        for (ids in path.messageIds.chunked(900)) {
+            for (message in dao.messages(sessionId, ids)) {
+                messages[message.id] = selected.getValue(message.id).applyTo(DbJson.decode(message.json))
+            }
+        }
+        ConversationSnapshot(
+            summary = SessionSummary(row.id, row.title, row.createdAt, row.updatedAt),
+            rootMessageId = path.rootMessageId,
+            messages = path.messageIds.map { messages.getValue(it) },
+            branches = path.branches,
+        )
+    }
+
     override suspend fun save(session: Session) {
         db.withTransaction {
             dao.upsertSession(session.toEntity())
@@ -45,7 +68,7 @@ class RoomSessionStore(
             if (dao.touchSession(sessionId, updatedAt, rootMessageId) == 0) {
                 return@withTransaction
             }
-            val seq = dao.message(sessionId, message.id)?.seq ?: ((dao.maxSeq(sessionId) ?: -1) + 1)
+            val seq = dao.messageSeq(sessionId, message.id) ?: ((dao.maxSeq(sessionId) ?: -1) + 1)
             dao.upsertMessages(listOf(message.toEntity(sessionId, seq)))
             dao.deleteMessageFilesOf(sessionId, message.id)
             writeReferences(sessionId, listOf(message))
@@ -71,11 +94,20 @@ class RoomSessionStore(
         val needle = query.trim()
         if (needle.isEmpty()) return emptyList()
         return withContext(io) {
-            val rows = if (canPrefilter(needle)) dao.messagesLike("%${likePattern(needle)}%") else dao.allMessages()
-            rows.flatMap { row ->
-                ensureActive() // 逐条解码，取消后不再继续
-                matchesOf(row.sessionId, DbJson.decode(row.json), needle)
+            val pattern = if (canPrefilter(needle)) "%${likePattern(needle)}%" else null
+            val matches = ArrayList<MessageMatch>()
+            var afterRowId = Long.MIN_VALUE
+            while (true) {
+                ensureActive()
+                val rows = dao.searchPage(afterRowId, pattern, 32)
+                if (rows.isEmpty()) break
+                for (row in rows) {
+                    ensureActive()
+                    matches += matchesOf(row.sessionId, DbJson.decode(row.json), needle)
+                }
+                afterRowId = rows.last().rowId
             }
+            matches.sortedByDescending { it.createdAt }
         }
     }
 
@@ -95,21 +127,57 @@ class RoomSessionStore(
 
     private fun matchesOf(sessionId: String, message: Message, needle: String): List<MessageMatch> = when (message) {
         is Message.User -> buildList {
-            if (message.content.contains(needle, ignoreCase = true)) {
-                add(MessageMatch(sessionId, message.id, message.createdAt, true, message.content))
+            matchPreview(message.content, needle)?.let {
+                add(MessageMatch(sessionId, message.id, message.createdAt, true, it))
             }
-            message.files.filter { it.name.contains(needle, ignoreCase = true) }.forEach {
-                add(MessageMatch(sessionId, message.id, message.createdAt, true, it.name, isFileName = true))
+            message.files.forEach { file ->
+                matchPreview(file.name, needle)?.let {
+                    add(MessageMatch(sessionId, message.id, message.createdAt, true, it, isFileName = true))
+                }
             }
         }
         is Message.Assistant -> {
-            val text = message.blocks.filterIsInstance<ReplyBlock.Text>().filter { !it.isTemplate }.joinToString("\n") { it.text }
-            if (text.contains(needle, ignoreCase = true)) {
+            val text = replyMatchPreview(message, needle)
+            if (text != null) {
                 listOf(MessageMatch(sessionId, message.id, message.createdAt, false, text))
             } else {
                 emptyList()
             }
         }
+    }
+
+    private fun matchPreview(text: String, needle: String): String? {
+        val index = text.indexOf(needle, ignoreCase = true)
+        if (index < 0) return null
+        val from = (index - 128).coerceAtLeast(0)
+        val to = (index + needle.length + 256).coerceAtMost(text.length)
+        return (if (from > 0) "…" else "") + text.substring(from, to) + (if (to < text.length) "…" else "")
+    }
+
+    /** 相邻正文直接拼接；可见思考或工具步骤把正文分段，不能跨步骤制造命中。 */
+    private fun replyMatchPreview(message: Message.Assistant, needle: String): String? {
+        val fetched = message.blocks.filterIsInstance<ReplyBlock.WebFetchToolResult>()
+            .filter { it.errorCode == null }.associateBy { it.toolUseId }
+        val text = StringBuilder()
+        for (block in message.blocks) {
+            if (block is ReplyBlock.Text) {
+                if (!block.isTemplate) text.append(block.text)
+                continue
+            }
+            val separatesText = when (block) {
+                is ReplyBlock.Thinking -> block.thinking.isNotEmpty()
+                is ReplyBlock.ServerToolUse -> {
+                    val input = block.input
+                    input !is ServerToolInput.ReadLink || input.url.isNotEmpty() || !fetched[block.id]?.url.isNullOrEmpty()
+                }
+                else -> false
+            }
+            if (separatesText && text.isNotEmpty()) {
+                matchPreview(text.toString(), needle)?.let { return it }
+                text.setLength(0)
+            }
+        }
+        return matchPreview(text.toString(), needle)
     }
 
     /** JSON 会转义引号、反斜杠和控制字符，大小写折叠也不止 ASCII；这些情况放弃 LIKE 粗筛，全量扫描。 */

@@ -90,4 +90,14 @@ class BranchesTest {
         val unchanged = selectVersion(imported, "missing")
         assertSame(imported, unchanged)
     }
+
+    @Test
+    fun searchSelectsAncestorPathAndPreservesFollowingMessages() {
+        val otherRoot = appendBranch(imported, null, listOf(user("u", null), reply("r", null)))
+        val selected = selectMessagePath(otherRoot, "15")
+        assertEquals(listOf("10", "13", "14", "15"), visibleMessages(selected).map { it.id })
+        assertEquals(otherRoot.messages.size, selected.messages.size)
+        assertEquals(selected, selectMessagePath(selected, "14"))
+        assertSame(imported, selectMessagePath(imported, "missing"))
+    }
 }

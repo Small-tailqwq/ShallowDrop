@@ -89,12 +89,11 @@ class AppContainer(context: Context) {
         }
     }
 
-    /** 启动时收尾：补完中断的导入，把残留的进行中回复标为已停止 */
+    /** 启动时补完中断的导入；消息在打开会话时收尾，避免扫描全部历史。 */
     fun onAppStart() {
         appScope.launch {
             // 失败时状态保持 Pending：设置页提示并可重试，发送带图消息前也会再试
             runCatching { archiveBackup.retryImageRestore() }
-            runCatching { chatEngine.markInterruptedOnStartup() }
         }
     }
 }

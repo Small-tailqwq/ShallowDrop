@@ -28,7 +28,7 @@ data class SessionEntity(
 @Entity(
     tableName = "messages",
     primaryKeys = ["sessionId", "id"],
-    indices = [Index("sessionId"), Index("id"), Index("createdAt")],
+    indices = [Index(value = ["sessionId", "seq", "id", "parentId", "selectedChildId"], name = "index_messages_branches"), Index("id"), Index("createdAt")],
 )
 data class MessageEntity(
     val sessionId: String,
@@ -40,7 +40,11 @@ data class MessageEntity(
     val role: String,
     /** 整条 Message 的 JSON，见 DbJson */
     val json: String,
+    val parentId: String?,
+    val selectedChildId: String?,
 )
+
+data class MessageSearchRow(val rowId: Long, val sessionId: String, val json: String)
 
 @Entity(
     tableName = "message_files",
@@ -82,6 +86,8 @@ data class StagingMessageEntity(
     val createdAt: Long,
     val role: String,
     val json: String,
+    val parentId: String?,
+    val selectedChildId: String?,
 )
 
 @Entity(

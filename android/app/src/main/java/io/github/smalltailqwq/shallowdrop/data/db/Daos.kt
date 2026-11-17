@@ -6,6 +6,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import io.github.smalltailqwq.shallowdrop.core.model.MessageBranch
 import io.github.smalltailqwq.shallowdrop.core.model.SessionSummary
 import kotlinx.coroutines.flow.Flow
 
@@ -24,15 +25,26 @@ interface ChatDao {
     @Query("SELECT * FROM messages WHERE sessionId = :sessionId ORDER BY seq")
     suspend fun messages(sessionId: String): List<MessageEntity>
 
+    @Query("SELECT id, parentId, selectedChildId FROM messages WHERE sessionId = :sessionId ORDER BY seq")
+    suspend fun branches(sessionId: String): List<MessageBranch>
+
+    @Query("SELECT * FROM messages WHERE sessionId = :sessionId AND id IN (:ids)")
+    suspend fun messages(sessionId: String, ids: List<String>): List<MessageEntity>
+
+    @Query("SELECT seq FROM messages WHERE sessionId = :sessionId AND id = :id")
+    suspend fun messageSeq(sessionId: String, id: String): Int?
+
     @Query("SELECT * FROM messages WHERE sessionId = :sessionId AND id = :id")
     suspend fun message(sessionId: String, id: String): MessageEntity?
 
-    @Query("SELECT * FROM messages ORDER BY createdAt DESC")
-    suspend fun allMessages(): List<MessageEntity>
-
-    /** pattern 为已转义的 LIKE 模式（转义符 \），仅作粗筛，精确匹配在 Kotlin 侧 */
-    @Query("SELECT * FROM messages WHERE json LIKE :pattern ESCAPE '\\' ORDER BY createdAt DESC")
-    suspend fun messagesLike(pattern: String): List<MessageEntity>
+    /** 多个 Text 块可拼成一个词，需要绕过按单份 JSON 的 LIKE 粗筛。 */
+    @Query(
+        "SELECT rowid AS rowId, sessionId, json FROM messages WHERE rowid > :afterRowId AND " +
+            "(:pattern IS NULL OR json LIKE :pattern ESCAPE '\\' OR " +
+            "(role = 'assistant' AND json LIKE '%\"type\":\"text\"%\"type\":\"text\"%')) " +
+            "ORDER BY rowid LIMIT :limit",
+    )
+    suspend fun searchPage(afterRowId: Long, pattern: String?, limit: Int): List<MessageSearchRow>
 
     @Query("SELECT MAX(seq) FROM messages WHERE sessionId = :sessionId")
     suspend fun maxSeq(sessionId: String): Int?
@@ -185,8 +197,8 @@ interface StagingDao {
     suspend fun copySessions()
 
     @Query(
-        "INSERT INTO messages (sessionId, id, seq, createdAt, role, json) " +
-            "SELECT sessionId, id, seq, createdAt, role, json FROM staging_messages",
+        "INSERT INTO messages (sessionId, id, seq, createdAt, role, json, parentId, selectedChildId) " +
+            "SELECT sessionId, id, seq, createdAt, role, json, parentId, selectedChildId FROM staging_messages",
     )
     suspend fun copyMessages()
 

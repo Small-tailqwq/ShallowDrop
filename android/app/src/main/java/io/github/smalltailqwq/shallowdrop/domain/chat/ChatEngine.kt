@@ -14,6 +14,7 @@ import io.github.smalltailqwq.shallowdrop.core.contract.TurnView
 import io.github.smalltailqwq.shallowdrop.core.model.ApiException
 import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
 import io.github.smalltailqwq.shallowdrop.core.model.ContextSummary
+import io.github.smalltailqwq.shallowdrop.core.model.ConversationSnapshot
 import io.github.smalltailqwq.shallowdrop.core.model.CreateMessageRequest
 import io.github.smalltailqwq.shallowdrop.core.model.FileAttachment
 import io.github.smalltailqwq.shallowdrop.core.model.Message
@@ -25,7 +26,7 @@ import io.github.smalltailqwq.shallowdrop.core.model.RequestTool
 import io.github.smalltailqwq.shallowdrop.core.model.Session
 import io.github.smalltailqwq.shallowdrop.core.model.SessionSummary
 import io.github.smalltailqwq.shallowdrop.core.model.StopReason
-import io.github.smalltailqwq.shallowdrop.core.model.toSummary
+import io.github.smalltailqwq.shallowdrop.core.model.toBranch
 import java.time.ZoneId
 import java.util.Locale
 import java.util.UUID
@@ -111,7 +112,7 @@ class ChatEngine(
             if (search) listOf(RequestTool.ReadUrl, RequestTool.WebSearch) else listOf(RequestTool.ReadUrl)
 
         /** 仍在生成中的回复（进程被杀或导出时未结束）按「已停止」处理，以会话 updatedAt 收尾思考计时 */
-        fun settleInterrupted(session: Session): Session {
+        private fun settleInterrupted(session: ConversationSnapshot): ConversationSnapshot {
             if (session.messages.none { it.isUnfinished() }) return session
             return session.copy(
                 messages = session.messages.map {
@@ -129,8 +130,11 @@ class ChatEngine(
     }
 
     /** 一次生成；titleRequested 在手动重命名或标题写入后取消 */
-    private class Generation(@Volatile var titleRequested: Boolean) {
+    private class Generation(@Volatile var titleRequested: Boolean, session: ConversationSnapshot) {
         lateinit var job: Job
+        val branches = session.branches
+        val messageOffsets = session.messages.withIndex().associate { it.value.id to it.index }
+        val positions = siblingPositions(session)
     }
 
     private data class Request(
@@ -141,7 +145,7 @@ class ChatEngine(
         val voice: Boolean = false,
     )
 
-    private val cache = MutableStateFlow<Map<String, Session>>(emptyMap())
+    private val cache = MutableStateFlow<Map<String, ConversationSnapshot>>(emptyMap())
     private val generations = ConcurrentHashMap<String, Generation>()
     private val generatingIds = MutableStateFlow<Set<String>>(emptySet())
     private val watchers = HashMap<String, Int>()
@@ -228,10 +232,13 @@ class ChatEngine(
             ensureLoaded(sessionId)
             launch { watchExternalChanges(sessionId) }
             launch {
+                var previous: ConversationState? = null
                 combine(
                     cache.map { it[sessionId] }.distinctUntilChanged(),
                     generatingIds.map { sessionId in it }.distinctUntilChanged(),
-                ) { session, generating -> session?.let { conversationState(it, generating) } }
+                ) { session, generating ->
+                    session?.let { conversationState(it, generating, previous) }.also { previous = it }
+                }
                     .distinctUntilChanged()
                     .collect { send(it) }
             }
@@ -260,11 +267,17 @@ class ChatEngine(
         }
     }
 
-    private fun conversationState(session: Session, generating: Boolean): ConversationState {
-        val path = visibleMessages(session)
-        val positions = siblingPositions(session)
+    private fun conversationState(session: ConversationSnapshot, generating: Boolean, previous: ConversationState?): ConversationState {
+        // 会话和生成标记分开发送，combine 可能短暂收到新增回复前的会话快照。
+        val generation = generations[session.id]?.takeIf { it.branches === session.branches }
+        val path = session.messages
+        val positions = generation?.positions ?: siblingPositions(session)
         val turns = path.mapIndexed { index, message ->
             val (siblingIndex, siblingCount) = positions[message.id] ?: (0 to 1)
+            val previousTurn = previous?.takeIf { it.generating && generating }?.turns?.getOrNull(index)
+            if (previousTurn?.message === message && previousTurn.siblingIndex == siblingIndex && previousTurn.siblingCount == siblingCount) {
+                return@mapIndexed previousTurn
+            }
             val afterQuestion = path.getOrNull(index - 1) is Message.User
             TurnView(
                 message = message,
@@ -280,9 +293,10 @@ class ChatEngine(
                     afterQuestion &&
                     index == path.lastIndex &&
                     canContinueReply(message),
+                canFork = message is Message.Assistant && message.status == ReplyStatus.Done && !generating,
             )
         }
-        return ConversationState(session.toSummary(), turns, generating)
+        return ConversationState(session.summary, turns, generating)
     }
 
     private fun retain(sessionId: String) = synchronized(watchers) {
@@ -305,9 +319,9 @@ class ChatEngine(
 
     // ---------- 缓存与落盘 ----------
 
-    private suspend fun ensureLoaded(sessionId: String): Session? {
+    private suspend fun ensureLoaded(sessionId: String): ConversationSnapshot? {
         cache.value[sessionId]?.let { return it }
-        val stored = store.load(sessionId) ?: return null
+        val stored = store.loadConversation(sessionId) ?: return null
         val settled = if (isGenerating(sessionId)) stored else settleInterrupted(stored)
         var result = settled
         cache.update { current ->
@@ -325,15 +339,38 @@ class ChatEngine(
     }
 
     private suspend fun reload(sessionId: String) {
-        val stored = store.load(sessionId) ?: return
+        val before = cache.value[sessionId]
+        val stored = store.loadConversation(sessionId)
         if (isGenerating(sessionId)) return
+        if (stored == null) {
+            cache.update { it - sessionId }
+            return
+        }
         val settled = settleInterrupted(stored)
-        cache.update { it + (sessionId to settled) }
+        cache.update { current ->
+            current + (sessionId to mergeLoaded(settled, before, current[sessionId]))
+        }
         if (settled !== stored) persistDiff(stored, settled)
     }
 
+    /** 读取期间的重命名、后台上传可更新缓存；保留这些改动，同时采用本次选择的树指针。 */
+    private fun mergeLoaded(
+        loaded: ConversationSnapshot,
+        before: ConversationSnapshot?,
+        current: ConversationSnapshot?,
+    ): ConversationSnapshot {
+        if (current == null || current === before) return loaded
+        val summary = if (current.summary != before?.summary) current.summary else loaded.summary
+        val messages = if (current.messages === before?.messages) loaded.messages else {
+            val beforeById = before?.messages?.associateBy { it.id }.orEmpty()
+            val changed = current.messages.filter { it != beforeById[it.id] }.associateBy { it.id }
+            loaded.messages.map { message -> changed[message.id]?.let { message.toBranch().applyTo(it) } ?: message }
+        }
+        return loaded.copy(summary = summary, messages = messages)
+    }
+
     /** 原子更新缓存中的会话；不在缓存时返回 null */
-    private fun updateCached(sessionId: String, update: (Session) -> Session): Pair<Session, Session>? {
+    private fun updateCached(sessionId: String, update: (ConversationSnapshot) -> ConversationSnapshot): Pair<ConversationSnapshot, ConversationSnapshot>? {
         while (true) {
             val current = cache.value
             val old = current[sessionId] ?: return null
@@ -344,18 +381,18 @@ class ChatEngine(
     }
 
     /** 缓存中有则更新缓存并落盘，否则读库修改后落盘 */
-    private suspend fun modifySession(sessionId: String, update: (Session) -> Session) {
+    private suspend fun modifySession(sessionId: String, update: (ConversationSnapshot) -> ConversationSnapshot) {
         val cached = updateCached(sessionId, update)
         if (cached != null) {
             persistDiff(cached.first, cached.second)
             return
         }
-        val stored = store.load(sessionId) ?: return
+        val stored = store.loadConversation(sessionId) ?: return
         persistDiff(stored, update(stored))
     }
 
     /** 写入变化的消息；只有 rootMessageId / updatedAt 变化时借根消息写入元数据 */
-    private suspend fun persistDiff(old: Session, new: Session) {
+    private suspend fun persistDiff(old: ConversationSnapshot, new: ConversationSnapshot) {
         if (old === new) return
         val oldById = old.messages.associateBy { it.id }
         val changed = new.messages.filter { oldById[it.id] != it }.mapTo(LinkedHashSet()) { it.id }
@@ -363,7 +400,7 @@ class ChatEngine(
         persistMessages(new, changed, metaChanged)
     }
 
-    private suspend fun persistMessages(snapshot: Session, ids: Set<String>, metaChanged: Boolean = false) {
+    private suspend fun persistMessages(snapshot: ConversationSnapshot, ids: Set<String>, metaChanged: Boolean = false) {
         writeMutex.withLock {
             // 取写入时的最新内容，避免并发更新的写入顺序与内存顺序不一致
             val session = cache.value[snapshot.id] ?: snapshot
@@ -371,7 +408,9 @@ class ChatEngine(
                 if (!metaChanged) return
                 listOfNotNull(session.messages.find { it.id == session.rootMessageId } ?: session.messages.firstOrNull())
             } else {
-                session.messages.filter { it.id in ids }
+                val offsets = generations[session.id]?.messageOffsets
+                if (offsets == null) session.messages.filter { it.id in ids }
+                    else ids.mapNotNull { id -> offsets[id]?.let { session.messages[it] } }
             }
             for (message in targets) {
                 store.upsertMessage(session.id, message, session.updatedAt, session.rootMessageId)
@@ -382,9 +421,13 @@ class ChatEngine(
     /** 用最新回复替换内存中的消息，保留分支字段；persist 为 true 时落盘 */
     private suspend fun writeReply(sessionId: String, reply: Message.Assistant, persist: Boolean) {
         val updated = updateCached(sessionId) { session ->
+            val offset = generations[sessionId]?.messageOffsets?.get(reply.id)
+                ?: session.messages.indexOfFirst { it.id == reply.id }
+            if (offset < 0) return@updateCached session
+            val previous = session.messages[offset]
             session.copy(
-                messages = session.messages.map {
-                    if (it.id == reply.id) reply.copy(parentId = it.parentId, selectedChildId = it.selectedChildId) else it
+                messages = ArrayList(session.messages).apply {
+                    set(offset, reply.copy(parentId = previous.parentId, selectedChildId = previous.selectedChildId))
                 },
             )
         }
@@ -433,17 +476,17 @@ class ChatEngine(
                 requireIdle(sessionId)
                 ensureLoaded(sessionId) ?: throw IllegalArgumentException("Session $sessionId not found")
             }
-            val base = current ?: Session(id = idGenerator(), title = "", createdAt = now, updatedAt = now)
+            val base = current ?: ConversationSnapshot(SessionSummary(idGenerator(), "", now, now))
             val history = visibleMessages(base)
             val question = Message.User(id = idGenerator(), createdAt = now, content = content, files = files)
             val reply = createReply(options)
-            val build = { session: Session ->
-                appendBranch(session, history.lastOrNull()?.id, listOf(question, reply)).copy(updatedAt = now)
+            val build = { session: ConversationSnapshot ->
+                appendBranch(session, history.lastOrNull()?.id, listOf(question, reply)).copy(summary = session.summary.copy(updatedAt = now))
             }
             if (current == null) {
                 val session = build(base)
                 cache.update { it + (session.id to session) }
-                store.save(session)
+                store.save(Session(session.id, session.title, now, now, session.messages, session.rootMessageId))
             } else {
                 val (old, new) = updateCached(base.id, build) ?: error("Session ${base.id} not loaded")
                 persistDiff(old, new)
@@ -470,7 +513,7 @@ class ChatEngine(
             if (previous.stopReason == StopReason.Refusal) return
             val reply = createReply(options)
             val (old, new) = updateCached(sessionId) {
-                appendBranch(it, question.id, listOf(reply)).copy(updatedAt = clock())
+                appendBranch(it, question.id, listOf(reply)).copy(summary = it.summary.copy(updatedAt = clock()))
             } ?: return
             persistDiff(old, new)
             startGeneration(sessionId, reply, Request(path.subList(0, index - 1), question, voice = options.voice), new.title.isEmpty())
@@ -491,7 +534,7 @@ class ChatEngine(
             val question = Message.User(id = idGenerator(), createdAt = now, content = content, files = previous.files)
             val reply = createReply(options)
             val (old, new) = updateCached(sessionId) {
-                appendBranch(it, path.getOrNull(index - 1)?.id, listOf(question, reply)).copy(updatedAt = now)
+                appendBranch(it, path.getOrNull(index - 1)?.id, listOf(question, reply)).copy(summary = it.summary.copy(updatedAt = now))
             } ?: return
             persistDiff(old, new)
             startGeneration(sessionId, reply, Request(path.subList(0, index), question, voice = options.voice), new.title.isEmpty())
@@ -517,7 +560,7 @@ class ChatEngine(
             )
             val (old, new) = updateCached(sessionId) { s ->
                 s.copy(
-                    updatedAt = clock(),
+                    summary = s.summary.copy(updatedAt = clock()),
                     messages = s.messages.map { if (it.id == reply.id) reply else it },
                 )
             } ?: return
@@ -553,15 +596,40 @@ class ChatEngine(
         }
     }
 
+    override suspend fun fork(sessionId: String, assistantMessageId: String): String? = opMutex.withLock {
+        if (isGenerating(sessionId)) return@withLock null
+        val source = ensureLoaded(sessionId) ?: return@withLock null
+        val title = nextForkTitle(source.title, store.observeSummaries().first().map { it.title })
+        val fork = forkSession(source, assistantMessageId, idGenerator(), title, clock()) ?: return@withLock null
+        store.save(fork)
+        fork.id
+    }
+
     /** 切换到 messageId 的第 index 个兄弟版本；仅限当前路径上的节点，生成中不可切换。 */
     override suspend fun switchBranch(sessionId: String, messageId: String, index: Int) {
         opMutex.withLock {
             if (isGenerating(sessionId)) return
             val session = ensureLoaded(sessionId) ?: return
             val target = siblingsOf(session, messageId).getOrNull(index) ?: return
-            val (old, new) = updateCached(sessionId) { selectVersion(it, target.id) } ?: return
-            persistDiff(old, new)
+            if (session.messages.none { it.id == messageId }) return
+            loadSelectedPath(sessionId, target.id)
         }
+    }
+
+    override suspend fun selectMessage(sessionId: String, messageId: String): Boolean = opMutex.withLock {
+        val session = ensureLoaded(sessionId) ?: return@withLock false
+        if (visibleMessages(session).any { it.id == messageId }) return@withLock true
+        if (isGenerating(sessionId)) return@withLock false
+        loadSelectedPath(sessionId, messageId)
+    }
+
+    private suspend fun loadSelectedPath(sessionId: String, messageId: String): Boolean {
+        val before = cache.value[sessionId]
+        val loaded = store.loadConversation(sessionId, messageId) ?: return false
+        val selected = settleInterrupted(loaded)
+        val (old, new) = updateCached(sessionId) { mergeLoaded(selected, before, it) } ?: return false
+        persistDiff(old, new)
+        return new.messages.any { it.id == messageId }
     }
 
     override suspend fun addAttachment(uri: Uri): FileAttachment = attachments.importFromUri(uri)
@@ -569,7 +637,7 @@ class ChatEngine(
     /** 手动重命名后取消本轮自动标题写入，包含主动清空标题的情况。 */
     override suspend fun rename(sessionId: String, title: String) {
         generations[sessionId]?.titleRequested = false
-        updateCached(sessionId) { it.copy(title = title) }
+        updateCached(sessionId) { it.copy(summary = it.summary.copy(title = title)) }
         store.rename(sessionId, title)
     }
 
@@ -612,25 +680,13 @@ class ChatEngine(
         }
     }
 
-    /** 启动时把库中残留的 Pending / Streaming 回复标为 Stopped（进程被杀时未能收尾）。 */
-    suspend fun markInterruptedOnStartup() {
-        for (summary in store.observeSummaries().first()) {
-            if (isGenerating(summary.id)) continue
-            val stored = store.load(summary.id) ?: continue
-            val settled = settleInterrupted(stored)
-            if (settled === stored) continue
-            updateCached(summary.id) { settleInterrupted(it) }
-            persistDiff(stored, settled)
-        }
-    }
-
     /** 历史导入或外部整体替换数据后调用：丢弃内存中不在生成的会话，观察中的会话重新读取。 */
     suspend fun invalidateCache() {
         for (id in cache.value.keys) {
             if (isGenerating(id)) continue
             val watched = synchronized(watchers) { id in watchers }
             if (watched) {
-                if (store.load(id) == null) cache.update { it - id } else reload(id)
+                reload(id)
             } else {
                 cache.update { it - id }
             }
@@ -641,7 +697,7 @@ class ChatEngine(
     // ---------- 生成 ----------
 
     private fun startGeneration(sessionId: String, initial: Message.Assistant, request: Request, titleRequested: Boolean) {
-        val generation = Generation(titleRequested)
+        val generation = Generation(titleRequested, cache.value.getValue(sessionId))
         generations[sessionId] = generation
         generatingIds.update { it + sessionId }
         // ATOMIC：调度前就被停止（发送后立即 stop）也会进入协程体，
@@ -823,7 +879,7 @@ class ChatEngine(
         updateCached(sessionId) { session ->
             if (session.title.isEmpty()) {
                 applied = true
-                session.copy(title = title)
+                session.copy(summary = session.summary.copy(title = title))
             } else {
                 applied = false
                 session
@@ -935,7 +991,7 @@ class ChatEngine(
         return task
     }
 
-    /** 把补传得到的 serverId 写回会话里所有引用同一附件的消息（编辑、重新生成会共用附件） */
+    /** 把补传得到的 serverId 写回已加载的附件引用；数据库中其他引用由 AttachmentStore 更新。 */
     private suspend fun saveServerIds(sessionId: String, serverIds: Map<String, String>) {
         if (serverIds.isEmpty()) return
         modifySession(sessionId) { session ->

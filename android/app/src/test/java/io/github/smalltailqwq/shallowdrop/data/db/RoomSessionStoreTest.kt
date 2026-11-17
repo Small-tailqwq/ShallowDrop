@@ -79,6 +79,49 @@ class RoomSessionStoreTest {
     }
 
     @Test
+    fun conversationLoadsSelectedPathAndCanReadAnOlderVersionWithoutChangingStorage() = runTest {
+        val base = session("s1", 100, listOf(image))
+        val question = (base.messages[0] as Message.User).copy(selectedChildId = "a2")
+        val first = (base.messages[1] as Message.Assistant).copy(selectedChildId = "u2")
+        val followup = Message.User("u2", 30, parentId = "a1", selectedChildId = "a3", content = "继续")
+        val followupReply = Message.Assistant("a3", 40, parentId = "u2", status = ReplyStatus.Done)
+        val latest = Message.Assistant(
+            "a2", 50, parentId = "u1", status = ReplyStatus.Done,
+            blocks = listOf(ReplyBlock.Text("新版正文".repeat(4_000))),
+        )
+        val original = base.copy(messages = listOf(question, first, followup, followupReply, latest))
+        store.save(original)
+
+        val current = store.loadConversation("s1")!!
+        assertEquals(listOf(question, latest), current.messages)
+        assertEquals(original.messages.map { it.id }, current.branches.map { it.id })
+        val older = store.loadConversation("s1", "a1")!!
+        assertEquals(listOf(question.copy(selectedChildId = "a1"), first, followup, followupReply), older.messages)
+        assertEquals("a1", older.branches.first().selectedChildId)
+        assertEquals(original, store.load("s1"))
+        assertNull(store.loadConversation("s1", "missing"))
+        assertNull(store.loadConversation("missing"))
+
+        store.upsertMessage("s1", question.copy(selectedChildId = "a1"), 101, "u1")
+        assertEquals(older.messages, store.loadConversation("s1")!!.messages)
+        assertEquals(listOf(image), (older.messages.first() as Message.User).files)
+    }
+
+    @Test
+    fun conversationLoadsAPathLongerThanTheSqliteBindLimitInOrder() = runTest {
+        val messages = List(1_200) { index ->
+            Message.User(
+                id = "m$index", createdAt = index.toLong(),
+                parentId = if (index == 0) null else "m${index - 1}",
+                selectedChildId = if (index == 1_199) null else "m${index + 1}",
+                content = "第 $index 条",
+            )
+        }
+        store.save(Session("long", "长对话", 0, 1_199, messages, "m0"))
+        assertEquals(messages, store.loadConversation("long")!!.messages)
+    }
+
+    @Test
     fun searchMessagesFindsTextReplyAndFileNameOnly() = runTest {
         val report = FileAttachment(id = "f1", name = "Quarterly_Report.pdf", size = 1, isImage = false)
         store.save(session("s1", 100, listOf(report)))
@@ -110,6 +153,41 @@ class RoomSessionStoreTest {
         assertEquals(setOf("long-s"), store.searchMessages("xsx").map { it.sessionId }.toSet())
         assertEquals(setOf("dotless", "dotted"), store.searchMessages("xix").map { it.sessionId }.toSet())
         assertEquals(setOf("kelvin"), store.searchMessages("XKX").map { it.sessionId }.toSet())
+    }
+
+    @Test
+    fun searchReturnsBoundedPreviewsFromEveryPageInNewestOrder() = runTest {
+        val messages = List(80) { index ->
+            Message.User("u$index", index.toLong(), content = "前文".repeat(4_000) + "needle $index" + "后文".repeat(4_000))
+        }
+        store.save(Session("many", "多版本", 0, 79, messages, "u79"))
+        val matches = store.searchMessages("needle")
+        assertEquals(messages.map { it.id }.reversed(), matches.map { it.messageId })
+        assertTrue(matches.all { it.text.contains("needle") && it.text.length <= 392 })
+    }
+
+    @Test
+    fun searchDoesNotJoinTextAcrossVisibleThinkingOrIncludeTemplates() = runTest {
+        val blocks = listOf(ReplyBlock.Text("Shallow"), ReplyBlock.Thinking("推理"), ReplyBlock.Text("Drop"),
+            ReplyBlock.Text("template", isTemplate = true))
+        store.save(Session("s", "分段", 0, 1, listOf(Message.Assistant("a", 1, status = ReplyStatus.Done, blocks = blocks)), "a"))
+        assertTrue(store.searchMessages("ShallowDrop").isEmpty())
+        assertTrue(store.searchMessages("template").isEmpty())
+        assertEquals("Drop", store.searchMessages("Drop").single().text)
+    }
+
+    @Test
+    fun searchJoinsTextAcrossAnInvisibleFailedLinkRead() = runTest {
+        val blocks = listOf(
+            ReplyBlock.Text("Shallow"),
+            ReplyBlock.ServerToolUse("read", "deepseek_read_url", ServerToolInput.ReadLink(""), ServerToolKind.ReadLink),
+            ReplyBlock.WebFetchToolResult("read", url = "https://example.com", errorCode = "failed", kind = ServerToolKind.ReadLink),
+            ReplyBlock.Text("Drop"),
+        )
+        val reply = Message.Assistant("a", 1, status = ReplyStatus.Done, blocks = blocks)
+        store.save(Session("s", "链接阅读", 0, 1, listOf(reply), "a"))
+        assertEquals("ShallowDrop", io.github.smalltailqwq.shallowdrop.ui.chat.reply.buildReplyView(reply, false).answer!!.text)
+        assertEquals("ShallowDrop", store.searchMessages("ShallowDrop").single().text)
     }
 
     @Test

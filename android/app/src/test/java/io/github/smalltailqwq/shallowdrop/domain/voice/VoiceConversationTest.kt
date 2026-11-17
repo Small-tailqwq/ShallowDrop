@@ -73,6 +73,8 @@ class VoiceConversationTest {
         override suspend fun editAndResend(sessionId: String, userMessageId: String, text: String, options: SendOptions) = Unit
         override suspend fun continueReply(sessionId: String, assistantMessageId: String) = Unit
         override suspend fun switchBranch(sessionId: String, messageId: String, index: Int) = Unit
+        override suspend fun fork(sessionId: String, assistantMessageId: String): String? = error("unused")
+        override suspend fun selectMessage(sessionId: String, messageId: String) = true
         override suspend fun addAttachment(uri: Uri): FileAttachment = error("unused")
         override suspend fun rename(sessionId: String, title: String) = Unit
         override suspend fun delete(sessionId: String) = Unit

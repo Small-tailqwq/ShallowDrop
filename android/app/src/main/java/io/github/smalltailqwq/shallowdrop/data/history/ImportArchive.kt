@@ -20,9 +20,11 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.decodeFromStream
 
 /** 从原件字节补充图片 MIME；无法识别时为空字符串，图片身份仍由归档的 is_image 决定。 */
 internal fun imageType(bytes: ByteArray): String {
@@ -57,11 +59,14 @@ internal class ArchiveImporter(
     private val staging: StagingDao = db.stagingDao()
     private val json = Json
 
+    @OptIn(ExperimentalSerializationApi::class)
     private fun readJson(entry: ArchiveZipReader.Entry): JsonElement {
-        // 与 TextDecoder 一致：非法字节替换为 U+FFFD，去掉开头的 BOM。
-        val text = entry.readBytes().toString(Charsets.UTF_8).removePrefix("\uFEFF")
+        val input = entry.buffered()
+        input.mark(3)
+        if (input.read() != 0xef || input.read() != 0xbb || input.read() != 0xbf) input.reset()
         return try {
-            json.parseToJsonElement(text)
+            // 流解码同样把非法 UTF-8 替换为 U+FFFD，省去整条字节与字符串副本。
+            json.decodeFromStream(JsonElement.serializer(), input)
         } catch (_: SerializationException) {
             fail(HistoryErrorCodes.INVALID_JSON)
         } catch (_: IllegalArgumentException) {
@@ -219,6 +224,8 @@ internal class ArchiveImporter(
                         createdAt = message.createdAt,
                         role = if (message is Message.User) "user" else "assistant",
                         json = DbJson.encode(message),
+                        parentId = message.parentId,
+                        selectedChildId = message.selectedChildId,
                     )
                 },
             )

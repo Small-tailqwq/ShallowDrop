@@ -13,6 +13,7 @@ import io.github.smalltailqwq.shallowdrop.core.model.FileAttachment
 import io.github.smalltailqwq.shallowdrop.core.model.SessionSummary
 import io.github.smalltailqwq.shallowdrop.core.model.ThemePreference
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -49,6 +50,7 @@ class ChatViewModelSessionTest {
     fun tearDown() = Dispatchers.resetMain()
 
     private class Repo : ChatRepository {
+        var forkResult: CompletableDeferred<String?>? = null
         val list = MutableSharedFlow<List<SessionSummary>>(replay = 1)
         override val sessions: Flow<List<SessionSummary>> = list
 
@@ -64,6 +66,8 @@ class ChatViewModelSessionTest {
         override suspend fun editAndResend(sessionId: String, userMessageId: String, text: String, options: SendOptions) = Unit
         override suspend fun continueReply(sessionId: String, assistantMessageId: String) = Unit
         override suspend fun switchBranch(sessionId: String, messageId: String, index: Int) = Unit
+        override suspend fun fork(sessionId: String, assistantMessageId: String): String? = forkResult?.await() ?: "fork"
+        override suspend fun selectMessage(sessionId: String, messageId: String) = true
         override suspend fun addAttachment(uri: Uri): FileAttachment = error("unused")
         override suspend fun rename(sessionId: String, title: String) = Unit
         override suspend fun delete(sessionId: String) = Unit
@@ -98,6 +102,29 @@ class ChatViewModelSessionTest {
     }
 
     private val ChatViewModel.current get() = state.value.sessionId
+
+    @Test
+    fun forkOpensNewSessionAndPreservesSourceDraft() = runTest(dispatcher) {
+        repo.emit("source")
+        val vm = viewModel("source")
+        vm.onTextChange("原来的草稿")
+        vm.fork("reply")
+        assertEquals("fork", vm.current)
+        assertEquals("", vm.state.value.draft.text)
+        vm.openSession("source")
+        assertEquals("原来的草稿", vm.state.value.draft.text)
+    }
+
+    @Test
+    fun finishingForkDoesNotReplaceUserSelectedSession() = runTest(dispatcher) {
+        repo.emit("source", "other")
+        repo.forkResult = CompletableDeferred()
+        val vm = viewModel("source")
+        vm.fork("reply")
+        vm.openSession("other")
+        repo.forkResult!!.complete("fork")
+        assertEquals("other", vm.current)
+    }
 
     @Test
     fun newSessionSurvivesStaleListThenFollowsRealDeletion() = runTest(dispatcher) {

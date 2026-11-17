@@ -34,11 +34,13 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.AnnotatedString
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.contract.TurnView
 import io.github.smalltailqwq.shallowdrop.core.model.Message
 import io.github.smalltailqwq.shallowdrop.ui.components.AttachmentThumbnail
 import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
+import io.github.smalltailqwq.shallowdrop.ui.components.searchTextHighlight
 import io.github.smalltailqwq.shallowdrop.ui.theme.LocalExtraColors
 
 /** 用户提问：附件与气泡；长按复制、朗读或编辑，编辑后作为兄弟节点重新发送。 */
@@ -117,10 +119,12 @@ fun UserMessage(
                             },
                         ),
                 ) {
+                    val highlight = searchTextHighlight(AnnotatedString(message.content))
                     Text(
-                        message.content,
+                        highlight.text,
                         style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp).then(highlight.modifier),
+                        onTextLayout = highlight.onTextLayout,
                     )
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

@@ -4,7 +4,7 @@
 
 启动图标遵循 [Android 自适应图标规范](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive)：`mipmap-anydpi/ic_launcher.xml` 组合纯白背景和透明矢量前景，108dp 画布中的鹈鹕位于中央 66dp 安全区内，由系统裁切外形；`monochrome` 共用前景的透明轮廓，支持系统主题图标。应用最低支持 Android 8.0（API 26），直接使用自适应图标资源。
 
-朗读相关的 `ic_speaker_outline_20.xml`、`ic_speaker_off_outline_20.xml`、`ic_stop_circle_outline_20.xml` 为自行绘制的线条图标。除这些图标、应用标志和启动图标外，`android/app/src/main/res/drawable/ic_*.xml` 来自本仓库 Web 版，即上游 DeepSeek [chat-demo](../../LICENSE)（MIT）中的内联 SVG，由 [`android/scripts/svg2vd.py`](../../android/scripts/svg2vd.py) 逐元素转换为 VectorDrawable，图形未改动。每个转换文件头部的注释写明了对应的源文件与组件名。
+朗读相关的 `ic_speaker_outline_20.xml`、`ic_speaker_off_outline_20.xml`、`ic_stop_circle_outline_20.xml` 和对话分支的 `ic_fork_outline_16.xml` 为自行绘制的线条图标。除这些图标、应用标志和启动图标外，`android/app/src/main/res/drawable/ic_*.xml` 来自本仓库 Web 版，即上游 DeepSeek [chat-demo](../../LICENSE)（MIT）中的内联 SVG，由 [`android/scripts/svg2vd.py`](../../android/scripts/svg2vd.py) 逐元素转换为 VectorDrawable，图形未改动。每个转换文件头部的注释写明了对应的源文件与组件名。
 
 - `src/components/base/icons.tsx`：单色图标，`fill="currentColor"` 转为黑色填充，在 Compose 中通过 `Icon` 的 `tint` 着色（封装见 `ui/components/DsIcon.kt`）。
 - `src/components/files/FileIcon.tsx`：彩色文件类型图标（`ic_file_*`），自带配色，使用时不着色。

@@ -37,6 +37,10 @@ android {
         buildConfig = true
     }
 
+    androidResources {
+        localeFilters += listOf("en", "zh-rCN")
+    }
+
     // 应用内切换语言需要完整的语言资源，AAB 不按语言拆分
     bundle {
         language {

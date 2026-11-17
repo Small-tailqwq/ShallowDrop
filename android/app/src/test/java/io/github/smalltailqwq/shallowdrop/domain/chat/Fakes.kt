@@ -22,6 +22,7 @@ import io.github.smalltailqwq.shallowdrop.core.model.StopReason
 import io.github.smalltailqwq.shallowdrop.core.model.TextCitation
 import io.github.smalltailqwq.shallowdrop.core.model.ThemePreference
 import io.github.smalltailqwq.shallowdrop.core.model.toSummary
+import io.github.smalltailqwq.shallowdrop.core.model.toConversationSnapshot
 import java.io.File
 import java.io.InputStream
 import kotlinx.coroutines.flow.Flow
@@ -70,6 +71,9 @@ class FakeSessionStore : SessionStore {
     override fun observeSummaries(): Flow<List<SessionSummary>> = data.map { map -> map.values.map { it.toSummary() } }
 
     override suspend fun load(sessionId: String): Session? = data.value[sessionId]
+
+    override suspend fun loadConversation(sessionId: String, selectedMessageId: String?) =
+        data.value[sessionId]?.toConversationSnapshot(selectedMessageId)
 
     override suspend fun save(session: Session) {
         data.update { it + (session.id to session) }

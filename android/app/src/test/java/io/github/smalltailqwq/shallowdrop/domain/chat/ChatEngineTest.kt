@@ -1,9 +1,12 @@
 package io.github.smalltailqwq.shallowdrop.domain.chat
 
 import io.github.smalltailqwq.shallowdrop.core.contract.ConversationState
+import io.github.smalltailqwq.shallowdrop.core.contract.ChatApi
 import io.github.smalltailqwq.shallowdrop.core.contract.SendOptions
+import io.github.smalltailqwq.shallowdrop.core.contract.SessionStore
 import io.github.smalltailqwq.shallowdrop.core.model.ApiException
 import io.github.smalltailqwq.shallowdrop.core.model.ChatModel
+import io.github.smalltailqwq.shallowdrop.core.model.ConversationSnapshot
 import io.github.smalltailqwq.shallowdrop.core.model.FileAttachment
 import io.github.smalltailqwq.shallowdrop.core.model.FileObject
 import io.github.smalltailqwq.shallowdrop.core.model.FilePurpose
@@ -21,11 +24,14 @@ import io.github.smalltailqwq.shallowdrop.core.model.StopReason
 import io.github.smalltailqwq.shallowdrop.core.model.UserContentParam
 import io.github.smalltailqwq.shallowdrop.core.model.LocationMode
 import io.github.smalltailqwq.shallowdrop.core.model.LocationPreference
+import java.io.InputStream
 import java.time.ZoneOffset
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.job
 import kotlinx.coroutines.awaitCancellation
@@ -103,6 +109,110 @@ class ChatEngineTest {
     private fun Message.Assistant.text() = replyText(this)
 
     private fun MessageParam.User.text() = content.filterIsInstance<UserContentParam.Text>().joinToString("") { it.text }
+
+    @Test
+    fun renamingWhileAnotherBranchLoadsKeepsTheNewTitle() = renameWhileLoading(switchBranch = true)
+
+    @Test
+    fun renamingWhileSessionReloadsKeepsTheNewTitle() = renameWhileLoading(switchBranch = false)
+
+    private fun renameWhileLoading(switchBranch: Boolean) = runTest {
+        val readSnapshot = CompletableDeferred<Unit>()
+        val finishRead = CompletableDeferred<Unit>()
+        var pauseRead = false
+        val pausingStore = object : SessionStore by store {
+            override suspend fun loadConversation(sessionId: String, selectedMessageId: String?): ConversationSnapshot? {
+                val snapshot = store.loadConversation(sessionId, selectedMessageId)
+                if (pauseRead) {
+                    readSnapshot.complete(Unit)
+                    finishRead.await()
+                }
+                return snapshot
+            }
+        }
+        val question = Message.User("u", 1, selectedChildId = "a1", content = "问题")
+        val first = Message.Assistant("a1", 2, parentId = "u", status = ReplyStatus.Done)
+        val second = Message.Assistant("a2", 3, parentId = "u", status = ReplyStatus.Done)
+        store.save(Session("s", "原名", 1, 3, listOf(question, first, second), "u"))
+        val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
+        try {
+            val engine = ChatEngine(api, pausingStore, attachments, settings, scope, resolveLocation = locate)
+            var latest: ConversationState? = null
+            backgroundScope.launch { engine.observeConversation("s").collect { latest = it } }
+            runCurrent()
+            assertEquals("原名", latest!!.session.title)
+            pauseRead = true
+            val loading = async {
+                if (switchBranch) engine.switchBranch("s", "a1", 1) else engine.invalidateCache()
+            }
+            runCurrent()
+            assertTrue(readSnapshot.isCompleted)
+            engine.rename("s", "新名")
+            runCurrent()
+            assertEquals("新名", latest!!.session.title)
+            finishRead.complete(Unit)
+            loading.await()
+            runCurrent()
+            assertEquals("新名", stored("s").title)
+            assertEquals("新名", latest!!.session.title)
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun longHistoryWithThousandsOfRetriesPreservesVersionsAndSelectedContext() = engineTest { engine ->
+        settings.setCompactionSettings(settings.settings.value.compactionThresholds, enabled = false)
+        val messages = buildList {
+            repeat(1000) { round ->
+                add(Message.User("u$round", 0, if (round == 0) null else "a${round - 1}", "a$round", "question $round " + "q".repeat(128)))
+                add(Message.Assistant("a$round", 0, "u$round", if (round == 999) "question" else "u${round + 1}",
+                    status = ReplyStatus.Done, blocks = listOf(ReplyBlock.Text("answer $round " + "a".repeat(512))), stopReason = StopReason.EndTurn))
+            }
+            add(Message.User("question", 0, "a999", "retry4999", "Repeat"))
+            repeat(5000) { retry ->
+                add(Message.Assistant("retry$retry", 0, "question", status = ReplyStatus.Done,
+                    blocks = listOf(ReplyBlock.Text("retry $retry")), stopReason = StopReason.EndTurn))
+            }
+        }
+        store.save(Session("many", "History", 0, 0, messages, "u0"))
+        val observed = mutableListOf<ConversationState>()
+        val watcher = backgroundScope.launch { engine.observeConversation("many").collect { if (it != null) observed += it } }
+        runCurrent()
+        api.scripts += {
+            flow {
+                emit(messageStart())
+                emit(textStart(0))
+                repeat(50) {
+                    emit(textDelta(0, "new "))
+                    delay(1)
+                }
+                emit(blockStop(0))
+                emit(messageDelta())
+                emit(MessageStreamEvent.MessageStop)
+            }
+        }
+        engine.regenerate("many", "retry4999", options)
+        advanceUntilIdle()
+        runCurrent()
+        val state = observed.last()
+        assertFalse(state.generating)
+        assertEquals(2002, state.turns.size)
+        assertEquals(5000, state.turns.last().siblingIndex)
+        assertEquals(5001, state.turns.last().siblingCount)
+        assertTrue(observed.all { it.turns.last().siblingCount >= 5000 })
+        assertEquals("new ".repeat(50), lastReply("many").text())
+        assertEquals(7002, stored("many").messages.size)
+        assertEquals(messages.filterIsInstance<Message.Assistant>(), stored("many").messages.filterIsInstance<Message.Assistant>().dropLast(1))
+        val request = api.requests.single()
+        assertEquals(1000, request.messages.filterIsInstance<MessageParam.Assistant>().size)
+        assertTrue(request.messages.filterIsInstance<MessageParam.Assistant>().none { it.toString().contains("retry ") })
+        engine.switchBranch("many", state.turns.last().message.id, 0)
+        runCurrent()
+        assertEquals("retry0", observed.last().turns.last().message.id)
+        assertEquals("retry 0", lastReply("many").text())
+        watcher.cancel()
+    }
 
     @Test
     fun locationFollowsPreferencesAcrossTextAndVoiceTurnsAndCanBeDisabled() = engineTest { engine ->
@@ -273,6 +383,24 @@ class ChatEngineTest {
 
         engine.switchBranch(id, path[0].id, 0)
         assertEquals(4, visibleMessages(stored(id)).size)
+    }
+
+    @Test
+    fun searchSelectionRestoresAndPersistsHistoricalBranch() = engineTest { engine ->
+        api.scripts += { textReply("历史命中") }
+        val id = engine.send(null, "q", emptyList(), options)
+        advanceUntilIdle()
+        val original = lastReply(id)
+        api.scripts += { textReply("新版本") }
+        engine.regenerate(id, original.id, options)
+        advanceUntilIdle()
+        val updatedAt = stored(id).updatedAt
+
+        assertTrue(engine.selectMessage(id, original.id))
+        assertEquals(original.id, engine.state(id).turns.last().message.id)
+        assertEquals(original.id, visibleMessages(store.load(id)!!).last().id)
+        assertEquals(updatedAt, stored(id).updatedAt)
+        assertFalse(engine.selectMessage(id, "missing"))
     }
 
     @Test
@@ -535,7 +663,7 @@ class ChatEngineTest {
     }
 
     @Test
-    fun markInterruptedOnStartupStopsLeftoverReplies() = engineTest { engine ->
+    fun openingSessionStopsLeftoverReplies() = engineTest { engine ->
         store.data.value = mapOf(
             "s" to Session(
                 id = "s",
@@ -556,7 +684,7 @@ class ChatEngineTest {
                 ),
             ),
         )
-        engine.markInterruptedOnStartup()
+        engine.state("s")
         val reply = lastReply("s")
         assertEquals(ReplyStatus.Stopped, reply.status)
         assertEquals(99L, (reply.blocks[0] as ReplyBlock.Thinking).endedAt)
@@ -595,6 +723,50 @@ class ChatEngineTest {
         assertEquals(1, api.requests.size)
     }
 
+    @Test
+    fun forkCreatesIndependentConversationsAndUsesSelectedPrefix() = engineTest { engine ->
+        val source = Session("source", "对话", 0, 4, listOf(
+            Message.User("u1", 0, selectedChildId = "a2", content = "第一个问题"),
+            Message.Assistant("a1", 1, parentId = "u1", status = ReplyStatus.Done, blocks = listOf(ReplyBlock.Text("旧答案"))),
+            Message.Assistant("a2", 2, parentId = "u1", selectedChildId = "u2", status = ReplyStatus.Done, blocks = listOf(ReplyBlock.Text("选中的答案"))),
+            Message.User("u2", 3, parentId = "a2", selectedChildId = "a3", content = "第二个问题"),
+            Message.Assistant("a3", 4, parentId = "u2", status = ReplyStatus.Done),
+        ), "u1")
+        store.save(source)
+        assertTrue(engine.state(source.id).turns.filter { it.message is Message.Assistant }.all { it.canFork })
+        val first = requireNotNull(engine.fork(source.id, "a2"))
+        val second = requireNotNull(engine.fork(source.id, "a2"))
+        val nested = requireNotNull(engine.fork(first, "a2"))
+        assertEquals("对话 #1", stored(first).title)
+        assertEquals("对话 #2", stored(second).title)
+        assertEquals("对话 #1-1", stored(nested).title)
+        assertEquals(listOf("u1", "a2"), stored(first).messages.map { it.id })
+        assertEquals(source, stored(source.id))
+        assertTrue(api.requests.isEmpty())
+
+        engine.send(first, "新方向", emptyList(), options)
+        advanceUntilIdle()
+        assertEquals(listOf("第一个问题", "新方向"), api.requests.last().messages.filterIsInstance<MessageParam.User>().map { it.text() })
+        assertEquals(2, stored(nested).messages.size)
+        engine.delete(source.id)
+        assertEquals(2, engine.state(nested).turns.size)
+        assertEquals(4, engine.state(first).turns.size)
+    }
+
+    @Test
+    fun forkRejectsHiddenOrUnfinishedMessagesAndGeneratingSessions() = engineTest { engine ->
+        api.scripts += { flow { emit(messageStart()); awaitCancellation() } }
+        val id = engine.send(null, "问题", emptyList(), options)
+        runCurrent()
+        val reply = lastReply(id)
+        assertNull(engine.fork(id, reply.id))
+        engine.stop(id)
+        advanceUntilIdle()
+        assertNull(engine.fork(id, reply.id))
+        assertNull(engine.fork(id, "missing"))
+        assertEquals(1, store.data.value.size)
+    }
+
     /** 调度前删除：收尾写入发生在删除之前，删除后不会被写回。 */
     @Test
     fun deleteBeforeGenerationDispatchIsNotWrittenBack() = engineTest { engine ->
@@ -604,5 +776,69 @@ class ChatEngineTest {
         assertFalse(id in store.data.value)
         assertTrue(engine.generating.value.isEmpty())
         assertTrue(api.requests.isEmpty())
+    }
+    @Test fun completingStoppedUploadWhileAnotherBranchLoadsKeepsItsServerId() = runTest {
+        val base = FakeSessionStore()
+        val selectedRead = CompletableDeferred<Unit>()
+        val finishRead = CompletableDeferred<Unit>()
+        val store = object : SessionStore by base {
+            override suspend fun loadConversation(sessionId: String, selectedMessageId: String?): ConversationSnapshot? {
+                val snapshot = base.loadConversation(sessionId, selectedMessageId)
+                if (selectedMessageId != null) {
+                    selectedRead.complete(Unit)
+                    finishRead.await()
+                }
+                return snapshot
+            }
+        }
+        val uploadBegun = CompletableDeferred<Unit>()
+        val completeUpload = CompletableDeferred<Unit>()
+        val api = object : ChatApi by FakeChatApi() {
+            override suspend fun uploadFile(apiKey: String, name: String, mimeType: String, purpose: FilePurpose?, content: () -> InputStream): FileObject {
+                uploadBegun.complete(Unit)
+                completeUpload.await()
+                content().use { it.readBytes() }
+                return FileObject("file-success")
+            }
+        }
+        val attachments = FakeAttachmentStore(tmp.newFolder()).also { it.putLocal("image") }
+        val file = FileAttachment("image", name = "a.png", size = 3, isImage = true)
+        val u = Message.User("u", 1, selectedChildId = "a1", content = "问题", files = listOf(file))
+        val a1 = Message.Assistant("a1", 2, parentId = "u", status = ReplyStatus.Done, blocks = listOf(ReplyBlock.Text("一")))
+        val a2 = Message.Assistant("a2", 3, parentId = "u", status = ReplyStatus.Done, blocks = listOf(ReplyBlock.Text("二")))
+        base.save(Session("s", "会话", 1, 3, listOf(u, a1, a2), "u"))
+        val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
+        val freshScope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
+        val options = SendOptions(thinking = false, search = false, model = ChatModel.Flash)
+        fun savedServerId() = (base.data.value.getValue("s").messages.first { it.id == "u" } as Message.User).files.single().serverId
+        try {
+            val engine = ChatEngine(api, store, attachments, FakeSettings(), scope, resolveLocation = { _, _ -> "" })
+            engine.send("s", "下一题", emptyList(), options)
+            runCurrent()
+            assertTrue(uploadBegun.isCompleted)
+            engine.stop("s")
+            runCurrent()
+            assertFalse("s" in engine.generating.value)
+            val switching = async { engine.switchBranch("s", "a1", 1) }
+            runCurrent()
+            assertTrue(selectedRead.isCompleted)
+            completeUpload.complete(Unit)
+            runCurrent()
+            assertEquals("file-success", savedServerId())
+            finishRead.complete(Unit)
+            switching.await()
+            runCurrent()
+            val afterSwitch = savedServerId()
+            scope.cancel()
+            val freshApi = FakeChatApi()
+            val restored = ChatEngine(freshApi, store, attachments, FakeSettings(), freshScope, resolveLocation = { _, _ -> "" })
+            restored.send("s", "重启后继续", emptyList(), options)
+            runCurrent()
+            assertEquals("file-success", afterSwitch)
+            assertEquals(0, freshApi.uploads.size)
+        } finally {
+            scope.cancel()
+            freshScope.cancel()
+        }
     }
 }

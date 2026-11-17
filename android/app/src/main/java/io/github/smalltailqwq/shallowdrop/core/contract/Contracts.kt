@@ -13,6 +13,7 @@ import io.github.smalltailqwq.shallowdrop.core.model.FilePurpose
 import io.github.smalltailqwq.shallowdrop.core.model.Message
 import io.github.smalltailqwq.shallowdrop.core.model.MessageStreamEvent
 import io.github.smalltailqwq.shallowdrop.core.model.Session
+import io.github.smalltailqwq.shallowdrop.core.model.ConversationSnapshot
 import io.github.smalltailqwq.shallowdrop.core.model.SessionSummary
 import io.github.smalltailqwq.shallowdrop.core.model.ThemePreference
 import io.github.smalltailqwq.shallowdrop.core.model.TtsVoice
@@ -54,6 +55,9 @@ interface SessionStore {
 
     suspend fun load(sessionId: String): Session?
 
+    /** 仅读取选中路径正文与完整树结构；目标参数只改变返回的路径，不写库。 */
+    suspend fun loadConversation(sessionId: String, selectedMessageId: String? = null): ConversationSnapshot?
+
     /** 写入会话元数据与全部消息（新建或整体覆盖） */
     suspend fun save(session: Session)
 
@@ -77,7 +81,7 @@ data class MessageMatch(
     val messageId: String,
     val createdAt: Long,
     val fromUser: Boolean,
-    /** 命中的完整文本（正文，或文件名） */
+    /** 含首个命中的预览文本，或命中的附件名。 */
     val text: String,
     val isFileName: Boolean = false,
 )
@@ -191,6 +195,7 @@ data class TurnView(
     /** 能否重新生成 / 续写，由 domain 规则决定 */
     val canRegenerate: Boolean = false,
     val canContinue: Boolean = false,
+    val canFork: Boolean = false,
 )
 
 data class ConversationState(
@@ -227,6 +232,12 @@ interface ChatRepository {
 
     /** 切换到 messageId 的第 index 个兄弟节点 */
     suspend fun switchBranch(sessionId: String, messageId: String, index: Int)
+
+    /** 从当前路径中已完成的回答创建独立会话；不可分支时返回 null。 */
+    suspend fun fork(sessionId: String, assistantMessageId: String): String?
+
+    /** 选择包含指定消息的分支；消息不存在或生成中无法切换时返回 false。 */
+    suspend fun selectMessage(sessionId: String, messageId: String): Boolean
 
     suspend fun addAttachment(uri: Uri): FileAttachment
 

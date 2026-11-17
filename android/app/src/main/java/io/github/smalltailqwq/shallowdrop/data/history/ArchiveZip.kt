@@ -21,6 +21,8 @@ internal class ArchiveFormatException(message: String, cause: Throwable? = null)
 
 private fun invalid(message: String): Nothing = throw ArchiveFormatException(message)
 
+private const val MAX_ARCHIVE_BYTES = 512L * 1024 * 1024
+
 /**
  * 条目名规则，读写两端一致（对照 zipReader.ts decodePath 与 zipWriter.ts entryName）：
  * NFC 规范化；拒绝空名、反斜杠、NUL、盘符、空片段与 . / ..（防路径穿越）。
@@ -157,7 +159,7 @@ internal class ArchiveZipReader(
             if (written != size || crc.value != record.crc) invalid("条目大小或 CRC 不符")
         }
 
-        /** 读完整个条目：会话 JSON 需要完整解析 */
+        /** 需要完整字节数组的小条目采用独立内存限制。 */
         fun readBytes(maxBytes: Int = MAX_JSON_BYTES): ByteArray {
             if (size > maxBytes) invalid("JSON 条目超出大小限制")
             val out = ByteArrayOutputStream(minOf(maxBytes, 8192))
@@ -342,9 +344,7 @@ internal class ArchiveZipReader(
     }
 
     companion object {
-        // JSON 会整体解析；图片逐块保存，归档总量采用独立限制。
         private const val MAX_JSON_BYTES = 16 * 1024 * 1024
-        private const val MAX_ARCHIVE_BYTES = 512L * 1024 * 1024
         private const val READ_CHUNK = 256 * 1024
 
         private fun u16(bytes: ByteArray, at: Int) = (bytes[at].toInt() and 0xff) or ((bytes[at + 1].toInt() and 0xff) shl 8)
@@ -381,18 +381,18 @@ internal class ArchiveZipReader(
     }
 }
 
-/** 导出超出 ZIP32 容量（对应 zipWriter.ts 的 ArchiveLimitError） */
-internal class ArchiveLimitException : IOException("History archive requires unsupported ZIP64 fields")
+/** 导出超出归档大小或 ZIP32 条目限制（对应 zipWriter.ts 的 ArchiveLimitError）。 */
+internal class ArchiveLimitException : IOException("History archive exceeds supported limits")
 
 /**
- * STORE 流式写入，对照 zipWriter.ts；成品必须能再次导入（同样的路径规则、无 ZIP64）。
+ * STORE 流式写入，对照 zipWriter.ts；成品遵循导入端相同的路径、总大小与 ZIP32 限制。
  * STORE 需要先知道 CRC 与大小：内存数据直接计算，文件先读一遍计算再写出。
  */
 internal class ArchiveZipWriter(output: OutputStream) : Closeable {
     private val zip = ZipOutputStream(output, Charsets.UTF_8)
     private val names = HashSet<String>()
     private var count = 0
-    private var offset = 0L
+    private var offset = 22L // 中央目录结束记录。
 
     private fun entryName(name: String): String {
         val normalized = try {
@@ -418,10 +418,9 @@ internal class ArchiveZipWriter(output: OutputStream) : Closeable {
     private fun begin(name: String, size: Long, crc: Long) {
         val normalized = entryName(name)
         val nameBytes = normalized.toByteArray(Charsets.UTF_8).size
-        if (size >= 0xffffffffL) throw ArchiveLimitException()
-        // 本地头 30 + 名称 + 数据，中央目录 46 + 名称；偏移必须保持在 ZIP32 范围内。
+        // 本地头 30 + 名称 + 数据，中央目录 46 + 名称；预留目录后再核对导入限额。
         offset += 30 + nameBytes + size + 46 + nameBytes
-        if (offset >= 0xffffffffL) throw ArchiveLimitException()
+        if (offset > MAX_ARCHIVE_BYTES) throw ArchiveLimitException()
         val entry = ZipEntry(normalized).apply {
             method = ZipEntry.STORED
             this.size = size
@@ -440,6 +439,7 @@ internal class ArchiveZipWriter(output: OutputStream) : Closeable {
     }
 
     fun add(name: String, file: File) {
+        if (file.length() > MAX_ARCHIVE_BYTES) throw ArchiveLimitException()
         val crc = CRC32()
         var size = 0L
         val buffer = ByteArray(64 * 1024)
@@ -449,6 +449,7 @@ internal class ArchiveZipWriter(output: OutputStream) : Closeable {
                 if (n < 0) break
                 crc.update(buffer, 0, n)
                 size += n
+                if (size > MAX_ARCHIVE_BYTES) throw ArchiveLimitException()
             }
         }
         begin(name, size, crc.value)

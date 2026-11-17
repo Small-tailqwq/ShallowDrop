@@ -31,6 +31,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.unit.dp
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
+import io.github.smalltailqwq.shallowdrop.ui.components.searchTextHighlight
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -39,6 +40,7 @@ import kotlinx.coroutines.launch
 internal fun CodeBlockView(block: MdBlock.CodeBlock, context: MarkdownContext, modifier: Modifier = Modifier) {
     val style = context.style
     val highlighted = remember(block.code, block.language, style) { highlightCode(block.code, block.language, style) }
+    val search = searchTextHighlight(highlighted)
     Column(
         modifier
             .fillMaxWidth()
@@ -52,17 +54,20 @@ internal fun CodeBlockView(block: MdBlock.CodeBlock, context: MarkdownContext, m
                 .padding(start = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(block.language, style = style.codeLabel, maxLines = 1)
+            val label = searchTextHighlight(AnnotatedString(block.language))
+            Text(label.text, style = style.codeLabel, maxLines = 1, modifier = label.modifier, onTextLayout = label.onTextLayout)
             Spacer(Modifier.weight(1f))
             CopyButton(block.code, style)
         }
         Text(
-            text = highlighted,
+            text = search.text,
             style = style.codeBlock,
             softWrap = false,
             modifier = Modifier
                 .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .then(search.modifier),
+            onTextLayout = search.onTextLayout,
         )
     }
 }

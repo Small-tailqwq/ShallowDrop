@@ -39,7 +39,7 @@ object HistoryErrorCodes {
     /** 本地存储失败（数据库或磁盘空间），原有数据未改变 */
     const val STORAGE_FAILED = "backupStorageFailed"
 
-    /** 历史记录超出 ZIP32 容量（条目数或大小），无法导出 */
+    /** 历史记录超出归档大小或 ZIP32 条目限制，无法导出 */
     const val EXPORT_TOO_LARGE = "backupExportTooLarge"
 
     /** 导出期间会话被删除，请重试 */

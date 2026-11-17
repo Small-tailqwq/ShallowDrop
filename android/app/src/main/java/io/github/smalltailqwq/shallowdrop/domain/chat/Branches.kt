@@ -1,7 +1,9 @@
 package io.github.smalltailqwq.shallowdrop.domain.chat
 
 import io.github.smalltailqwq.shallowdrop.core.model.Message
+import io.github.smalltailqwq.shallowdrop.core.model.ConversationSnapshot
 import io.github.smalltailqwq.shallowdrop.core.model.Session
+import io.github.smalltailqwq.shallowdrop.core.model.toBranch
 
 /*
  * 消息树与当前路径，对照 src/services/chat/branches.ts。
@@ -25,6 +27,44 @@ fun visibleMessages(session: Session): List<Message> {
         id = message.selectedChildId
     }
     return path
+}
+
+internal fun visibleMessages(session: ConversationSnapshot): List<Message> = session.messages
+
+internal fun siblingsOf(session: ConversationSnapshot, messageId: String) =
+    session.branches.find { it.id == messageId }?.let { message ->
+        session.branches.filter { it.parentId == message.parentId }
+    }.orEmpty()
+
+internal fun siblingPositions(session: ConversationSnapshot): Map<String, Pair<Int, Int>> {
+    val counts = HashMap<String?, Int>()
+    for (branch in session.branches) counts[branch.parentId] = (counts[branch.parentId] ?: 0) + 1
+    val next = HashMap<String?, Int>()
+    return session.branches.associate { branch ->
+        val index = next[branch.parentId] ?: 0
+        next[branch.parentId] = index + 1
+        branch.id to (index to counts.getValue(branch.parentId))
+    }
+}
+
+/** 新路径仅保留可见正文；旧回复的结构和数据库正文仍完整保留。 */
+internal fun appendBranch(session: ConversationSnapshot, parentId: String?, messages: List<Message>): ConversationSnapshot {
+    val first = messages.firstOrNull() ?: return session
+    val parent = session.messages.indexOfFirst { it.id == parentId }
+    check(parentId == null || parent >= 0)
+    val chained = messages.mapIndexed { index, message ->
+        message.withBranch(if (index == 0) parentId else messages[index - 1].id, messages.getOrNull(index + 1)?.id)
+    }
+    val prefix = session.messages.take(parent + 1).map { message ->
+        if (message.id == parentId) message.withBranch(message.parentId, first.id) else message
+    }
+    return session.copy(
+        rootMessageId = if (parentId == null) first.id else session.rootMessageId,
+        messages = prefix + chained,
+        branches = session.branches.map { branch ->
+            if (branch.id == parentId) branch.copy(selectedChildId = first.id) else branch
+        } + chained.map { it.toBranch() },
+    )
 }
 
 /** 与 messageId 同父的全部版本（含自身），按存储顺序。 */
@@ -73,6 +113,25 @@ fun selectVersion(session: Session, messageId: String): Session {
         rootMessageId = if (message.parentId == null) message.id else session.rootMessageId,
         messages = session.messages.map {
             if (it.id == message.parentId) it.withBranch(it.parentId, message.id) else it
+        },
+    )
+}
+
+/** 搜索定位：沿目标消息的祖先恢复整条路径，保留目标之后已选中的分支。 */
+fun selectMessagePath(session: Session, messageId: String): Session {
+    val byId = session.messages.associateBy { it.id }.toMutableMap()
+    val ancestors = mutableListOf<Message>()
+    var id: String? = messageId
+    while (id != null) {
+        val message = byId.remove(id) ?: return session
+        ancestors += message
+        id = message.parentId
+    }
+    val children = ancestors.zipWithNext { child, parent -> parent.id to child.id }.toMap()
+    return session.copy(
+        rootMessageId = ancestors.last().id,
+        messages = session.messages.map { message ->
+            children[message.id]?.let { message.withBranch(message.parentId, it) } ?: message
         },
     )
 }

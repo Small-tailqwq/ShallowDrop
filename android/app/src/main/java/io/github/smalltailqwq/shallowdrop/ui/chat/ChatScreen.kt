@@ -89,6 +89,7 @@ import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
 import io.github.smalltailqwq.shallowdrop.ui.theme.ChatTextTheme
 import io.github.smalltailqwq.shallowdrop.ui.sider.SessionListViewModel
 import io.github.smalltailqwq.shallowdrop.ui.sider.SessionSider
+import io.github.smalltailqwq.shallowdrop.ui.sider.SearchTarget
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
@@ -111,6 +112,8 @@ fun ChatScreen(
     openSession: String? = null,
     onOpenSessionHandled: () -> Unit = {},
     onOpenSearch: () -> Unit = {},
+    searchTarget: SearchTarget? = null,
+    onSearchTargetHandled: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val groups by sessionList.groups.collectAsStateWithLifecycle()
@@ -122,18 +125,27 @@ fun ChatScreen(
         merge(viewModel.events, sessionList.events).collect { snackbar.showSnackbar(it.resolve(context)) }
     }
 
-    LaunchedEffect(openSession) {
-        if (openSession != null) {
-            viewModel.openSession(openSession)
-            onOpenSessionHandled()
-        }
-    }
-
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val wide = maxWidth >= WIDE_BREAKPOINT
         val drawerState = rememberDrawerState(DrawerValue.Closed)
         var siderVisible by rememberSaveable { mutableStateOf(true) }
         val closeDrawer: () -> Unit = { scope.launch { drawerState.close() } }
+
+        LaunchedEffect(openSession) {
+            if (openSession != null) {
+                drawerState.snapTo(DrawerValue.Closed)
+                viewModel.openSession(openSession)
+                onOpenSessionHandled()
+            }
+        }
+
+        LaunchedEffect(searchTarget) {
+            if (searchTarget != null) {
+                drawerState.snapTo(DrawerValue.Closed)
+                viewModel.openSearchResult(searchTarget)
+                onSearchTargetHandled()
+            }
+        }
 
         val sider = @Composable { modifier: Modifier ->
             SessionSider(
@@ -143,10 +155,7 @@ fun ChatScreen(
                     viewModel.openSession(it)
                     closeDrawer()
                 },
-                onOpenSearch = {
-                    closeDrawer()
-                    onOpenSearch()
-                },
+                onOpenSearch = onOpenSearch,
                 onRename = sessionList::rename,
                 onDelete = sessionList::delete,
                 onOpenSettings = {
@@ -253,6 +262,7 @@ private fun ChatContent(
     val actions = remember(viewModel) {
         MessageActions(
             onRegenerate = viewModel::regenerate,
+            onFork = viewModel::fork,
             onContinue = viewModel::continueReply,
             onEdit = viewModel::editAndResend,
             onSwitchBranch = viewModel::switchBranch,
@@ -314,6 +324,8 @@ private fun ChatContent(
                             onNewChat = { viewModel.openSession(null) },
                             readingId = readingId,
                             onReadAloud = { id, text -> speech.toggle(id, text, languageTag) },
+                            searchTarget = state.searchTarget,
+                            onSearchTargetHandled = viewModel::clearSearchTarget,
                             modifier = Modifier.fillMaxSize(),
                         )
                         // 已选会话但尚未加载完成时留空，避免闪现欢迎页

@@ -29,7 +29,7 @@ internal fun FileAttachment.toEntity() = FileEntity(id, serverId, name, size, is
 internal fun FileEntity.toAttachment() = FileAttachment(id, serverId, name, size, isImage, mimeType)
 
 internal fun Message.toEntity(sessionId: String, seq: Int) =
-    MessageEntity(sessionId, id, seq, createdAt, role(), DbJson.encode(this))
+    MessageEntity(sessionId, id, seq, createdAt, role(), DbJson.encode(this), parentId, selectedChildId)
 
 /** 读取一个完整会话；不存在时返回 null。导出与 RoomSessionStore 共用。 */
 suspend fun AppDatabase.readSession(sessionId: String): Session? {

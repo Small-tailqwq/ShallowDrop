@@ -29,6 +29,7 @@ import io.github.smalltailqwq.shallowdrop.ui.sider.SessionSider
 import io.github.smalltailqwq.shallowdrop.ui.sider.SearchContent
 import io.github.smalltailqwq.shallowdrop.ui.sider.SearchResult
 import io.github.smalltailqwq.shallowdrop.ui.sider.SearchSnippet
+import io.github.smalltailqwq.shallowdrop.ui.sider.SearchTarget
 import io.github.smalltailqwq.shallowdrop.ui.sider.buildSearchResults
 import io.github.smalltailqwq.shallowdrop.ui.sider.snippetAround
 import io.github.smalltailqwq.shallowdrop.ui.theme.ShallowDropTheme
@@ -90,14 +91,44 @@ class SiderSearchAndErrorCardTest {
     fun fileNameOnlyHitKeepsFileFlag() {
         val results = buildSearchResults(sessions, listOf(match("c", "m", "报告.PDF", file = true)), "pdf", "新对话")
         assertEquals(listOf(SearchSnippet("报告.PDF", true, true)), results.single().snippets)
+        val markdownName = buildSearchResults(sessions, listOf(match("c", "m", "_报告_.PDF", file = true)), "pdf", "新对话")
+        assertEquals("_报告_.PDF", markdownName.single().snippets.single().text)
     }
 
     @Test
     fun snippetFlattensLineBreaks() {
         assertEquals("第一行 第二行 关键词", snippetAround("第一行\n第二行\n关键词", "关键词"))
+        assertEquals("前文 关键词 后文", snippetAround("  前文\n\n  关键词\t后文  ", "关键词"))
     }
 
-    private fun setSearch(results: List<SearchResult>?, highlight: String = "kotlin", onSelect: (String) -> Unit = {}) = compose.setContent {
+    @Test
+    fun previewReadsMarkdownAsTextAndKeepsLiteralUrlMatches() {
+        assertEquals("介绍 Kotlin 协程与取消。", snippetAround("## 介绍\n\n**Kotlin** [协程](https://example.com)与`取消`。", "Kotlin"))
+        assertEquals("Kotlin 示例 println(42)", snippetAround("Kotlin 示例\n\n```kotlin\nprintln(42)\n```", "Kotlin"))
+        assertEquals("[官网](https://example.com)", snippetAround("[官网](https://example.com)", "example.com"))
+    }
+
+    @Test
+    fun conversationPreviewUsesLatestMatchAndPrefersBodyToFileName() {
+        val results = buildSearchResults(sessions, listOf(
+            match("a", "old", "以前的 Kotlin 问题", 1),
+            match("a", "question", "新的 Kotlin 问题", 2),
+            match("a", "answer", "新的 Kotlin 解答", 3, user = false),
+            match("a", "answer", "Kotlin.pdf", 3, file = true),
+        ), "kotlin", "新对话")
+        assertEquals(listOf(SearchSnippet("新的 Kotlin 解答", false, false)), results.first().snippets)
+    }
+
+    @Test
+    fun simultaneousQuestionAndAnswerPreferAnswerPreview() {
+        val results = buildSearchResults(sessions, listOf(
+            match("a", "question", "Kotlin 问题", 3),
+            match("a", "answer", "Kotlin 解答", 3, user = false),
+        ), "kotlin", "新对话")
+        assertEquals(listOf(SearchSnippet("Kotlin 解答", false, false)), results.first().snippets)
+    }
+
+    private fun setSearch(results: List<SearchResult>?, highlight: String = "kotlin", onSelect: (SearchTarget) -> Unit = {}) = compose.setContent {
         ShallowDropTheme(darkTheme = false) {
             var query by remember { mutableStateOf("") }
             Surface { SearchContent(query, { query = it }, results, highlight, "新对话", {}, onSelect) }
@@ -106,12 +137,12 @@ class SiderSearchAndErrorCardTest {
 
     @Test
     fun searchPageShowsHitsAndOpensSession() {
-        var opened: String? = null
-        setSearch(listOf(SearchResult(summary("b", "Kotlin 协程取消"), listOf(SearchSnippet("…读 kotlin 文档", true, false)))), onSelect = { opened = it })
+        var opened: SearchTarget? = null
+        setSearch(listOf(SearchResult(summary("b", "Kotlin 协程取消"), listOf(SearchSnippet("…读 kotlin 文档", true, false)), "m1")), onSelect = { opened = it })
         compose.onNodeWithText("Kotlin 协程取消").assertIsDisplayed()
         compose.onNodeWithText("…读 kotlin 文档").assertIsDisplayed()
         compose.onNodeWithText("Kotlin 协程取消").performClick()
-        assertEquals("b", opened)
+        assertEquals(SearchTarget("b", "m1", "kotlin"), opened)
     }
 
     @Test

@@ -18,9 +18,11 @@ import io.github.smalltailqwq.shallowdrop.ui.UiDependencies
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.UiText
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.errorCodeMessage
 import io.github.smalltailqwq.shallowdrop.ui.common.uiViewModelFactory
+import io.github.smalltailqwq.shallowdrop.ui.sider.SearchTarget
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +56,7 @@ data class ChatUiState(
     val conversation: ConversationState? = null,
     val draft: Draft = Draft(),
     val settings: AppSettings = AppSettings(),
+    val searchTarget: SearchTarget? = null,
 ) {
     val generating: Boolean get() = conversation?.generating == true
     val isEmpty: Boolean get() = conversation?.turns.isNullOrEmpty()
@@ -73,6 +76,8 @@ class ChatViewModel(
 
     /** 每个会话（含新对话 null）各自保留草稿 */
     private val drafts = MutableStateFlow<Map<String?, Draft>>(emptyMap())
+    private val searchTarget = MutableStateFlow<SearchTarget?>(null)
+    private var searchJob: Job? = null
 
     private val conversation: Flow<ConversationState?> = sessionId.flatMapLatest { id ->
         if (id == null) flowOf(null) else repository.observeConversation(id)
@@ -83,8 +88,9 @@ class ChatViewModel(
         conversation,
         drafts,
         settingsRepository.settings,
-    ) { id, conv, draftMap, settings ->
-        ChatUiState(id, conv?.takeIf { it.session.id == id }, draftMap[id] ?: Draft(), settings)
+        searchTarget,
+    ) { id, conv, draftMap, settings, target ->
+        ChatUiState(id, conv?.takeIf { it.session.id == id }, draftMap[id] ?: Draft(), settings, target)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatUiState())
 
     private val eventChannel = Channel<UiText>(Channel.BUFFERED)
@@ -109,7 +115,32 @@ class ChatViewModel(
     }
 
     fun openSession(id: String?) {
+        searchJob?.cancel()
+        searchTarget.value = null
         handle[KEY_SESSION] = id
+    }
+
+    fun openSearchResult(target: SearchTarget) {
+        openSession(target.sessionId)
+        val messageId = target.messageId ?: return
+        searchTarget.value = target
+        searchJob = viewModelScope.launch {
+            runCatchingNonCancel { repository.selectMessage(target.sessionId, messageId) }
+                .onSuccess { selected ->
+                    if (!selected) {
+                        clearSearchTarget(target)
+                        eventChannel.trySend(UiText.Res(R.string.search_message_unavailable))
+                    }
+                }
+                .onFailure {
+                    clearSearchTarget(target)
+                    eventChannel.trySend(errorText(it, R.string.search_message_unavailable))
+                }
+        }
+    }
+
+    fun clearSearchTarget(target: SearchTarget) {
+        searchTarget.update { if (it == target) null else it }
     }
 
     private fun options(): SendOptions {
@@ -210,6 +241,15 @@ class ChatViewModel(
     fun continueReply(messageId: String) = launchAction { repository.continueReply(it, messageId) }
 
     fun switchBranch(messageId: String, index: Int) = launchAction { repository.switchBranch(it, messageId, index) }
+
+    fun fork(messageId: String) = launchAction { sourceId ->
+        val forkId = repository.fork(sourceId, messageId)
+        if (forkId == null) {
+            eventChannel.trySend(UiText.Res(R.string.fork_unavailable))
+        } else if (sessionId.value == sourceId) {
+            openSession(forkId)
+        }
+    }
 
     private fun errorText(error: Throwable, fallback: Int): UiText {
         Log.w(TAG, "操作失败", error)

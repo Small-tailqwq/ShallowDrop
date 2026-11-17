@@ -11,6 +11,10 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.junit4.createComposeRule
 import io.github.smalltailqwq.shallowdrop.core.contract.ChatRepository
@@ -29,11 +33,14 @@ import io.github.smalltailqwq.shallowdrop.core.model.ReplyStatus
 import io.github.smalltailqwq.shallowdrop.core.model.ReplyBlock
 import io.github.smalltailqwq.shallowdrop.ui.sider.SessionListViewModel
 import io.github.smalltailqwq.shallowdrop.ui.theme.ShallowDropTheme
+import io.github.smalltailqwq.shallowdrop.ui.sider.SearchTarget
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -62,6 +69,8 @@ class ChatScrollTest {
         override suspend fun editAndResend(sessionId: String, userMessageId: String, text: String, options: SendOptions) = Unit
         override suspend fun continueReply(sessionId: String, assistantMessageId: String) = Unit
         override suspend fun switchBranch(sessionId: String, messageId: String, index: Int) = Unit
+        override suspend fun fork(sessionId: String, assistantMessageId: String): String? = error("unused")
+        override suspend fun selectMessage(sessionId: String, messageId: String) = true
         override suspend fun addAttachment(uri: Uri): FileAttachment = error("unused")
         override suspend fun rename(sessionId: String, title: String) = Unit
         override suspend fun delete(sessionId: String) = Unit
@@ -108,18 +117,42 @@ class ChatScrollTest {
         compose.onNodeWithText(text, substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("回到底部").assertDoesNotExist()
     }
-    @Test fun searchEntryOpensSearchPageAndClosesDrawer() {
+    @Test fun searchEntryOpensSearchPageFromDrawer() {
         var opened = 0
         show(Repo(conversation()), onOpenSearch = { opened++ })
         compose.onNodeWithContentDescription("打开边栏").performClick()
         compose.onNodeWithText("搜索对话").performClick()
         compose.waitForIdle()
         assertEquals(1, opened)
-        compose.onNodeWithText("搜索对话").assertIsNotDisplayed()
+        compose.onNodeWithText("搜索对话").assertIsDisplayed()
     }
     @Test fun firstLayoutOpensAtBottom() {
         show(Repo(conversation()))
         assertBottom("结束")
+    }
+    @Test fun searchLocatesEarlierMessageAndKeywordHighlightExpires() {
+        val text = "定位前文。".repeat(100) + "SEARCH_HIT" + "后文。".repeat(40)
+        val original = conversation()
+        val turns = original.turns.map { turn ->
+            if (turn.message.id != "previewa2") turn else turn.copy(message =
+                (turn.message as Message.Assistant).copy(blocks = listOf(ReplyBlock.Text(text))))
+        }
+        val vm = show(Repo(original.copy(turns = turns)))
+        compose.runOnIdle { vm.openSearchResult(SearchTarget("preview", "previewa2", "SEARCH_HIT")) }
+        compose.waitForIdle()
+        compose.onNodeWithText(text).assertIsDisplayed()
+        fun hasHighlight(): Boolean {
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText(text).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            return layouts.single().layoutInput.text.spanStyles.any { it.item.background != Color.Unspecified }
+        }
+        assertTrue(hasHighlight())
+        compose.mainClock.advanceTimeBy(1_000)
+        assertTrue(hasHighlight())
+        compose.mainClock.advanceTimeBy(1_500)
+        assertFalse(hasHighlight())
+        compose.onNodeWithText(text).assertIsDisplayed()
+        compose.onNodeWithContentDescription("回到底部").assertIsDisplayed()
     }
     @Test fun asynchronouslyLoadedConversationOpensAtBottom() {
         val repo = Repo(null)

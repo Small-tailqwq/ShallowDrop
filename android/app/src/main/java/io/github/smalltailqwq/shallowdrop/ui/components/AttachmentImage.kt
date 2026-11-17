@@ -6,8 +6,13 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -72,15 +77,23 @@ fun AttachmentThumbnail(file: FileAttachment, size: Dp, fallback: @Composable ()
     var viewing by remember { mutableStateOf(false) }
     when (val image = state) {
         is ImageBitmap -> {
-            Image(
-                bitmap = image,
-                contentDescription = file.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(size)
-                    .clip(RoundedCornerShape(12.dp))
-                    .clickable { viewing = true },
-            )
+            Column {
+                Image(
+                    bitmap = image,
+                    contentDescription = file.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(size)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { viewing = true },
+                )
+                val query = LocalSearchHighlight.current?.query
+                if (query != null && file.name.contains(query, ignoreCase = true)) {
+                    val highlight = searchTextHighlight(AnnotatedString(file.name))
+                    Text(highlight.text, style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.widthIn(max = size).then(highlight.modifier), onTextLayout = highlight.onTextLayout)
+                }
+            }
             if (viewing) ImageViewer(file, lookup) { viewing = false }
         }
         Missing -> fallback()

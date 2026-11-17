@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,6 +28,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import io.github.smalltailqwq.shallowdrop.ui.motion.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -48,6 +50,7 @@ import io.github.smalltailqwq.shallowdrop.ui.chat.reply.buildReplyView
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.describeReply
 import io.github.smalltailqwq.shallowdrop.ui.common.resolve
 import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
+import io.github.smalltailqwq.shallowdrop.ui.components.LocalSearchHighlight
 
 /** 助手回复，对照 AssistantMessage.tsx。 */
 @Composable
@@ -68,6 +71,7 @@ fun AssistantMessage(
     onNewChat: () -> Unit = {},
     /** 设置页演示：画出横滑的死区与触发距离 */
     swipeGuide: Boolean = false,
+    onFork: () -> Unit = {},
 ) {
     val message = turn.message as Message.Assistant
     val view = remember(message, streaming) { buildReplyView(message, streaming) }
@@ -89,14 +93,16 @@ fun AssistantMessage(
 
     Column(modifier.fillMaxWidth()) {
         if (!refused) {
-            ReplyArea(
-                message = message,
-                view = view,
-                streaming = streaming,
-                hasResponse = responseText.isNotEmpty(),
-                onOpenSources = onOpenSources,
-                modifier = Modifier.padding(bottom = 4.dp),
-            )
+            CompositionLocalProvider(LocalSearchHighlight provides null) {
+                ReplyArea(
+                    message = message,
+                    view = view,
+                    streaming = streaming,
+                    hasResponse = responseText.isNotEmpty(),
+                    onOpenSources = onOpenSources,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
         }
         if (answer != null) {
             RegeneratableReply(enabled = canRegenerate && !streaming, settings = swipeSettings, onRegenerate = onRegenerate, showGuide = swipeGuide) {
@@ -164,13 +170,12 @@ fun AssistantMessage(
                 }
             }
         }
-        // 只剩错误卡片（复制、重试、分支、续写都没有）时不留一行空白操作栏
-        val hasActions = copyText.isNotEmpty() || (canRegenerate && !retryInCard) || turn.siblingCount > 1 || (isLast && turn.canContinue)
+        val hasActions = copyText.isNotEmpty() || (canRegenerate && !retryInCard) || turn.siblingCount > 1 ||
+            (isLast && turn.canContinue) || (turn.canFork && !busy)
         if (!streaming && hasActions) {
-            // 操作栏：复制、版本切换、继续生成靠左，重新生成在最右
-            Row(
-                Modifier.fillMaxWidth().padding(top = 4.dp).height(40.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            FlowRow(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 if (copyText.isNotEmpty()) {
@@ -178,6 +183,9 @@ fun AssistantMessage(
                     ReadAloudButton(reading) { onReadAloud(copyText) }
                 }
                 BranchSwitcher(turn.siblingIndex, turn.siblingCount, enabled = !busy, onSelect = onSwitchBranch)
+                if (turn.canFork && !busy) {
+                    ActionIcon(R.drawable.ic_fork_outline_16, stringResource(R.string.fork_conversation), enabled = true, onClick = onFork)
+                }
                 if (isLast && turn.canContinue) {
                     Spacer(Modifier.width(4.dp))
                     OutlinedButton(onClick = onContinue, enabled = !busy, modifier = Modifier.height(32.dp)) {

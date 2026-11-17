@@ -1,5 +1,8 @@
 package io.github.smalltailqwq.shallowdrop.ui.chat.message
 
+import androidx.compose.ui.text.AnnotatedString
+import io.github.smalltailqwq.shallowdrop.ui.components.searchTextHighlight
+
 import android.content.ClipData
 import android.os.Build
 import android.widget.Toast
@@ -97,7 +100,10 @@ fun FileChip(file: FileAttachment, modifier: Modifier = Modifier) {
             FileIcon(file.name, Modifier.size(28.dp))
             Spacer(Modifier.width(8.dp))
             Column(verticalArrangement = Arrangement.Center) {
-                Text(file.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val highlight = searchTextHighlight(AnnotatedString(file.name))
+                Text(highlight.text, style = MaterialTheme.typography.bodyMedium,
+                    maxLines = if (highlight.matches) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis,
+                    modifier = highlight.modifier, onTextLayout = highlight.onTextLayout)
                 val size = formatSize(file.size)
                 if (size.isNotEmpty()) {
                     Text(size, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

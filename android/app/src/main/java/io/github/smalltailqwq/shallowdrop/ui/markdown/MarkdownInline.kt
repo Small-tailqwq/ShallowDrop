@@ -1,5 +1,7 @@
 package io.github.smalltailqwq.shallowdrop.ui.markdown
 
+import io.github.smalltailqwq.shallowdrop.ui.components.searchTextHighlight
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -179,9 +181,11 @@ internal fun MarkdownInlineText(
     textAlign: TextAlign? = null,
 ) {
     val built = remember(inlines, context) { buildInlineText(inlines, context) }
+    val highlight = searchTextHighlight(built.text)
     Text(
-        text = built.text,
-        modifier = modifier,
+        text = highlight.text,
+        modifier = modifier.then(highlight.modifier),
+        onTextLayout = highlight.onTextLayout,
         style = if (textAlign != null) textStyle.copy(textAlign = textAlign) else textStyle,
         inlineContent = built.inlineContent,
     )

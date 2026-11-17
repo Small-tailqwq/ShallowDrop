@@ -22,6 +22,10 @@ import io.github.smalltailqwq.shallowdrop.core.model.StopReason
 import io.github.smalltailqwq.shallowdrop.core.model.TextCitation
 import io.github.smalltailqwq.shallowdrop.core.model.WebSearchResult
 import io.github.smalltailqwq.shallowdrop.core.model.toSummary
+import io.github.smalltailqwq.shallowdrop.domain.chat.selectMessagePath
+import io.github.smalltailqwq.shallowdrop.domain.chat.visibleMessages
+import io.github.smalltailqwq.shallowdrop.domain.chat.forkSession
+import io.github.smalltailqwq.shallowdrop.domain.chat.nextForkTitle
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -115,6 +119,20 @@ class FakeChatRepository(
         }
     }
 
+    override suspend fun fork(sessionId: String, assistantMessageId: String): String? {
+        if (sessionId in generating.value) return null
+        var forkId: String? = null
+        store.update { sessions ->
+            val source = sessions[sessionId] ?: return@update sessions
+            val title = nextForkTitle(source.title, sessions.values.map { it.title })
+            val fork = forkSession(source, assistantMessageId, newId(), title, System.currentTimeMillis())
+                ?: return@update sessions
+            forkId = fork.id
+            sessions + (fork.id to fork)
+        }
+        return forkId
+    }
+
     override suspend fun addAttachment(uri: Uri): FileAttachment = withContext(Dispatchers.IO) {
         val resolver = appContext.contentResolver
         val mime = resolver.getType(uri).orEmpty()
@@ -128,6 +146,13 @@ class FakeChatRepository(
         }
         delay(400)
         FileAttachment(id = newId(), name = name, size = size, isImage = mime.startsWith("image/"), mimeType = mime)
+    }
+
+    override suspend fun selectMessage(sessionId: String, messageId: String): Boolean {
+        mutate(sessionId) { selectMessagePath(it, messageId) }
+        return store.value[sessionId]?.let { session ->
+            visibleMessages(session).any { it.id == messageId }
+        } == true
     }
 
     override suspend fun rename(sessionId: String, title: String) {
@@ -286,6 +311,7 @@ class FakeChatRepository(
                 message = message,
                 siblingIndex = siblings.indexOfFirst { it.id == message.id },
                 siblingCount = siblings.size,
+                canFork = message is Message.Assistant && message.status == ReplyStatus.Done && !busy,
                 canRegenerate = message is Message.Assistant && isLast && !busy &&
                     path.getOrNull(index - 1) is Message.User && message.stopReason != StopReason.Refusal,
                 canContinue = message is Message.Assistant && isLast && !busy && message.prefix &&

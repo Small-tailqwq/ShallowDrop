@@ -2,6 +2,9 @@ package io.github.smalltailqwq.shallowdrop.ui
 
 import io.github.smalltailqwq.shallowdrop.ui.motion.MotionEaseOut
 import io.github.smalltailqwq.shallowdrop.ui.motion.PAGE_MOTION_MS
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -21,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
@@ -31,6 +35,7 @@ import io.github.smalltailqwq.shallowdrop.ui.onboarding.OnboardingScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.FontSizeScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.LicenseScreen
 import io.github.smalltailqwq.shallowdrop.ui.sider.SearchScreen
+import io.github.smalltailqwq.shallowdrop.ui.sider.SearchTarget
 import io.github.smalltailqwq.shallowdrop.ui.settings.ReplySwipeScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.SettingsViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -114,8 +119,9 @@ private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
         }
     }
 
-    // 语音对话写入的会话、搜索选中的会话，回到对话页时打开
+    // 语音对话写入的会话，回到对话页时打开
     var voiceSession by rememberSaveable { mutableStateOf<String?>(null) }
+    var searchTarget by remember { mutableStateOf<SearchTarget?>(null) }
 
     // 外部打开或分享进来的 ZIP：转到设置页由其确认导入
     val incomingImport by deps.incomingImport.collectAsStateWithLifecycle()
@@ -144,20 +150,32 @@ private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
                 onOpenSettings = { navController.navigate(SettingsGraph) { launchSingleTop = true } },
             )
         }
-        composable<ChatRoute> {
+        composable<ChatRoute>(
+            exitTransition = {
+                if (targetState.destination.hasRoute<SearchRoute>()) ExitTransition.None else null
+            },
+            popEnterTransition = {
+                if (initialState.destination.hasRoute<SearchRoute>()) EnterTransition.None else null
+            },
+        ) {
             ChatScreen(
                 onOpenSettings = { navController.navigate(SettingsGraph) { launchSingleTop = true } },
                 onOpenVoice = { navController.navigate(VoiceRoute(it)) { launchSingleTop = true } },
                 onOpenSearch = { navController.navigate(SearchRoute) { launchSingleTop = true } },
                 openSession = voiceSession,
                 onOpenSessionHandled = { voiceSession = null },
+                searchTarget = searchTarget,
+                onSearchTargetHandled = { searchTarget = null },
             )
         }
-        composable<SearchRoute> {
+        composable<SearchRoute>(
+            enterTransition = { slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { it } },
+            popExitTransition = { slideOutHorizontally(tween(280, easing = FastOutSlowInEasing)) { it } },
+        ) {
             SearchScreen(
                 onBack = { navController.popBackStack() },
-                onSelect = { sessionId ->
-                    voiceSession = sessionId
+                onSelect = { target ->
+                    searchTarget = target
                     navController.popBackStack()
                 },
             )
