@@ -6,9 +6,7 @@
 
 ## 安装
 
-0.1.0 正在准备发布。正式安装包将提供在 [Releases 页面](https://github.com/Small-tailqwq/ShallowDrop/releases)，当前源码可按下方说明构建。最低支持 Android 8.0；通用 APK 包含 arm64-v8a、armeabi-v7a、x86 和 x86_64。
-
-**从开发版迁移：**先在设置中导出数据，再卸载开发版、安装 0.1.0 并导入备份。正式版启用新的签名证书，无法直接覆盖使用开发密钥签名的安装。
+从 [0.1.0 发布页面](https://github.com/Small-tailqwq/ShallowDrop/releases/tag/v0.1.0) 下载并安装 APK。最低支持 Android 8.0；通用 APK 包含 arm64-v8a、armeabi-v7a、x86 和 x86_64。
 
 ## 功能
 

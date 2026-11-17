@@ -6,9 +6,7 @@ A lightweight native Android client for DeepSeek, built with Kotlin and Jetpack 
 
 ## Install
 
-Version 0.1.0 is being prepared for release. Published packages will appear on the [releases page](https://github.com/Small-tailqwq/ShallowDrop/releases); to try the current source, follow the build instructions below. Android 8.0 or later is required; the universal APK supports arm64-v8a, armeabi-v7a, x86 and x86_64.
-
-**Moving from a development build:** export your data in Settings before uninstalling it, then install 0.1.0 and import the backup. The official release uses a new signing certificate and cannot update an installation signed with the development key.
+Download and install the APK from the [0.1.0 release page](https://github.com/Small-tailqwq/ShallowDrop/releases/tag/v0.1.0). Android 8.0 or later is required; the universal APK supports arm64-v8a, armeabi-v7a, x86 and x86_64.
 
 ## Features
 
