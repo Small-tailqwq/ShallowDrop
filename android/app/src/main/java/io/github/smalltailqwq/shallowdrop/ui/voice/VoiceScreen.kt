@@ -57,11 +57,12 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import io.github.smalltailqwq.shallowdrop.ui.components.AppBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -427,13 +428,14 @@ private fun VoiceOptionsSheet(
     onSearch: (Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(
+    AppBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        skipPartiallyExpanded = true,
         containerColor = groupedPageColor(),
     ) {
         Column(
             Modifier
+                .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(start = 16.dp, end = 16.dp, bottom = 24.dp),
         ) {

@@ -2,12 +2,12 @@ package io.github.smalltailqwq.shallowdrop.ui.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -26,7 +26,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -43,11 +42,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.model.ChatFontSize
@@ -76,35 +74,27 @@ internal fun swipeDirectionLabel(direction: ReplySwipeDirection): String = strin
  */
 @Composable
 fun FontSizeScreen(initial: ChatFontSize, onSave: (ChatFontSize) -> Unit, onBack: () -> Unit) {
-    var selected by rememberSaveable { mutableStateOf(initial) }
+    val slider = rememberPreviewSlider(initial.ordinal.toFloat(), 0f..ChatFontSize.entries.lastIndex.toFloat(), ChatFontSize.entries.lastIndex)
     val title = stringResource(R.string.chat_font_size)
-    val label = fontSizeLabel(selected)
     PreviewSettingsScaffold(
         title = title,
         onBack = {
+            val selected = ChatFontSize.entries[slider.selectedValue.roundToInt()]
             if (selected != initial) onSave(selected)
             onBack()
         },
+        compactWideControls = true,
         preview = { scroll ->
-            ChatTextTheme(selected) { PelicanPreview(Modifier.verticalScroll(scroll)) }
+            ChatTextTheme(ChatFontSize.Small.sp + slider.value * 2f) { PelicanPreview(Modifier.verticalScroll(scroll)) }
         },
-    ) {
-        Slider(
-            value = selected.ordinal.toFloat(),
-            onValueChange = { selected = ChatFontSize.entries[it.roundToInt()] },
-            valueRange = 0f..ChatFontSize.entries.lastIndex.toFloat(),
-            steps = ChatFontSize.entries.size - 2,
-            modifier = Modifier.fillMaxWidth().semantics {
-                contentDescription = title
-                stateDescription = label
-            },
+    ) { vertical, minHeight ->
+        LabeledPreviewSlider(
+            state = slider,
+            title = title,
+            labels = ChatFontSize.entries.map { fontSizeLabel(it) },
+            vertical = vertical,
+            modifier = Modifier.fillMaxWidth().heightIn(min = minHeight),
         )
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            ChatFontSize.entries.forEach { size ->
-                Text(fontSizeLabel(size), style = MaterialTheme.typography.labelMedium,
-                    color = if (selected == size) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
     }
 }
 
@@ -116,14 +106,17 @@ fun FontSizeScreen(initial: ChatFontSize, onSave: (ChatFontSize) -> Unit, onBack
 fun ReplySwipeScreen(initial: ReplySwipeSettings, onSave: (ReplySwipeSettings) -> Unit, onBack: () -> Unit) {
     var enabled by rememberSaveable { mutableStateOf(initial.enabled) }
     var direction by rememberSaveable { mutableStateOf(initial.direction) }
-    var deadZone by rememberSaveable { mutableIntStateOf(initial.edgeDeadZoneDp) }
-    var distance by rememberSaveable { mutableIntStateOf(initial.triggerDistanceDp) }
+    val deadZone = rememberPreviewSlider(initial.edgeDeadZoneDp.toFloat(), 0f..96f, 24)
+    val distance = rememberPreviewSlider(initial.triggerDistanceDp.toFloat(), 48f..160f, 28)
     var version by rememberSaveable { mutableIntStateOf(0) }
-    val draft = ReplySwipeSettings(enabled, direction, deadZone, distance)
+    val draft = ReplySwipeSettings(enabled, direction, deadZone.value.roundToInt(), distance.value.roundToInt())
     PreviewSettingsScaffold(
         title = stringResource(R.string.reply_swipe_title),
         onBack = {
-            if (draft != initial) onSave(draft)
+            val selected = ReplySwipeSettings(enabled, direction,
+                deadZone.valueOnLeave(initial.edgeDeadZoneDp.toFloat()).roundToInt(),
+                distance.valueOnLeave(initial.triggerDistanceDp.toFloat()).roundToInt())
+            if (selected != initial) onSave(selected)
             onBack()
         },
         startAtBottom = true,
@@ -137,7 +130,7 @@ fun ReplySwipeScreen(initial: ReplySwipeSettings, onSave: (ReplySwipeSettings) -
                 onSwitchVersion = { version = it },
             )
         },
-    ) {
+    ) { _, _ ->
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
             .toggleable(enabled, role = Role.Switch, onValueChange = { enabled = it }),
             verticalAlignment = Alignment.CenterVertically) {
@@ -155,21 +148,20 @@ fun ReplySwipeScreen(initial: ReplySwipeSettings, onSave: (ReplySwipeSettings) -
                     ) { Text(swipeDirectionLabel(option)) }
                 }
             }
-            SwipeDistanceControl(stringResource(R.string.reply_swipe_dead_zone), deadZone, 0f..96f, 23, enabled) { deadZone = it }
-            SwipeDistanceControl(stringResource(R.string.reply_swipe_distance), distance, 48f..160f, 27, enabled) { distance = it }
+            SwipeDistanceControl(stringResource(R.string.reply_swipe_dead_zone), deadZone, enabled)
+            SwipeDistanceControl(stringResource(R.string.reply_swipe_distance), distance, enabled)
         }
     }
 }
 
 @Composable
-private fun SwipeDistanceControl(title: String, value: Int, range: ClosedFloatingPointRange<Float>, steps: Int, enabled: Boolean, onChange: (Int) -> Unit) {
+private fun SwipeDistanceControl(title: String, slider: PreviewSliderState, enabled: Boolean) {
     Column(Modifier.padding(top = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, modifier = Modifier.weight(1f))
-            Text(stringResource(R.string.reply_swipe_dp, value), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.reply_swipe_dp, slider.value.roundToInt()), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Slider(value.toFloat(), onValueChange = { onChange(it.roundToInt()) }, enabled = enabled, valueRange = range, steps = steps,
-            modifier = Modifier.fillMaxWidth().semantics { contentDescription = title })
+        PreviewSlider(slider, title, enabled = enabled, modifier = Modifier.fillMaxWidth())
     }
 }
 
@@ -184,7 +176,8 @@ private fun PreviewSettingsScaffold(
     onBack: () -> Unit,
     preview: @Composable (ScrollState) -> Unit,
     startAtBottom: Boolean = false,
-    controls: @Composable ColumnScope.() -> Unit,
+    compactWideControls: Boolean = false,
+    controls: @Composable ColumnScope.(vertical: Boolean, minHeight: Dp) -> Unit,
 ) {
     val back by rememberUpdatedState(onBack)
     BackHandler { back() }
@@ -205,22 +198,30 @@ private fun PreviewSettingsScaffold(
         },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+        BoxWithConstraints(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
             val wide = maxWidth >= 600.dp && maxWidth > maxHeight
+            val vertical = wide && compactWideControls
             val panelMaxHeight = maxHeight * 0.5f
             val panel: @Composable (Modifier) -> Unit = { modifier ->
-                Surface(modifier, shape = RoundedCornerShape(20.dp), color = groupedCardColor(), tonalElevation = 1.dp) {
-                    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp), content = controls)
+                Surface(modifier.testTag("preview-controls"), shape = RoundedCornerShape(20.dp), color = groupedCardColor(), tonalElevation = 1.dp) {
+                    BoxWithConstraints {
+                        val minHeight = if (vertical) (maxHeight - 24.dp).coerceAtLeast(0.dp) else 0.dp
+                        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp)) {
+                            controls(vertical, minHeight)
+                        }
+                    }
                 }
             }
             if (wide) {
                 Row(Modifier.fillMaxSize()) {
-                    Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.TopCenter) { preview(scroll) }
-                    panel(Modifier.width(360.dp).padding(end = 16.dp, bottom = 16.dp).navigationBarsPadding())
+                    Box(Modifier.weight(1f).fillMaxHeight().testTag("preview-content"), contentAlignment = Alignment.TopCenter) { preview(scroll) }
+                    panel(Modifier.width(if (vertical) 176.dp else 360.dp)
+                        .then(if (vertical) Modifier.fillMaxHeight() else Modifier)
+                        .padding(end = 16.dp, bottom = 16.dp).navigationBarsPadding())
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
-                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) { preview(scroll) }
+                    Box(Modifier.weight(1f).fillMaxWidth().testTag("preview-content"), contentAlignment = Alignment.TopCenter) { preview(scroll) }
                     panel(Modifier.fillMaxWidth().heightIn(max = panelMaxHeight).padding(horizontal = 12.dp).padding(bottom = 12.dp).navigationBarsPadding())
                 }
             }

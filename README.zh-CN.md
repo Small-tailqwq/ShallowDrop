@@ -1,86 +1,61 @@
-# chat-demo
+# ShallowDrop
 
-[English](README.md) | 简体中文
+[English](README.md) · [Android 发布](https://github.com/Small-tailqwq/ShallowDrop/releases) · [Web 分支](https://github.com/Small-tailqwq/ShallowDrop/tree/main)
 
-基于 DeepSeek API 的静态聊天示例。无需应用后端，浏览器直接请求配置的 API 服务。
+轻量的 DeepSeek 原生 Android 客户端，使用 Kotlin 和 Jetpack Compose 构建，需要自备 DeepSeek API Key。本项目基于 DeepSeek chat-demo 开发，是独立的社区项目。
 
-点击 [在线体验](https://deepseek-ai.github.io/chat-demo/) 即可使用，也可以前往 [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases) 下载压缩包，解压后双击 `index.html` 在本地使用，无需安装或构建。首次使用时，请在设置中填写 API Key。
+## 安装
 
-## 运行
+0.1.0 正在准备发布。正式安装包将提供在 [Releases 页面](https://github.com/Small-tailqwq/ShallowDrop/releases)，当前源码可按下方说明构建。最低支持 Android 8.0；通用 APK 包含 arm64-v8a、armeabi-v7a、x86 和 x86_64。
 
-准备 Node.js 22.12+ 和 pnpm：
-
-```sh
-git clone https://github.com/deepseek-ai/chat-demo.git
-cd chat-demo
-pnpm install
-pnpm dev
-```
-
-打开 http://localhost:8090 。
-
-生成静态产物：
-
-```sh
-pnpm build
-```
-
-产物位于 `dist/`，可部署到静态服务器，也可直接打开 `dist/index.html`。直接打开时，浏览器和 API 服务需允许 `file://` 页面的存储与跨域请求。
+**从开发版迁移：**先在设置中导出数据，再卸载开发版、安装 0.1.0 并导入备份。正式版启用新的签名证书，无法直接覆盖使用开发密钥签名的安装。
 
 ## 功能
 
-- 多会话、自动标题、重命名与删除；编辑提问、重新生成和切换消息分支。
-- 流式回答、深度思考、智能搜索、链接阅读与来源引用；支持停止和符合条件的继续生成。
-- 附件上传、粘贴与拖拽，语音输入和回复朗读；移动端录音时输入框首行显示实时频谱。
-- Markdown、代码高亮、KaTeX 公式和 Mermaid 图表。
-- 简体中文与英文、浅色与深色主题、移动端布局、位置设置、历史导入导出。
+- 流式对话、思考、联网搜索与引用。
+- 图片和文件附件、语音输入与朗读。
+- Markdown、代码块、表格、数学与化学公式。
+- 重试历史和对话分支：从已完成的 AI 消息创建独立对话，分支标题使用 #1、#2、#1-1 等编号。
+- 对话搜索、本地历史、备份导入导出和上下文压缩。
+- 主题、语言、字号和导航偏好。
+- 设置 → 关于：应用介绍、免责声明、开源代码和逐项开源许可。
+
+长对话按当前对话路径加载，按需读取重试历史。存储、重试、安装包体积和冷启动的测量方法与结果见 [Android 性能报告](docs/android/performance-2026-11-17.md)。
 
 ## 数据
 
-API Key 和设置保存在浏览器 localStorage，会话及附件原件保存在 IndexedDB，本地数据按浏览器用户配置和站点源（origin）隔离。发送对话、上传附件和使用语音功能时，相应内容会提交给配置的 API 服务。
+对话和附件保存在设备上，API Key 使用 Android Keystore 和 AES-256-GCM 加密存储。请求会将相关对话内容和附件发送给 API 提供方，适用其服务条款、隐私政策和用量计费。ShallowDrop 无需额外部署应用后端。
 
-设置中的历史导入导出使用 ZIP 格式。导入会在确认并校验成功后替换全部本地会话和附件；导出包含会话与本地可用的图片原件，不包含 API Key、设置或非图片附件原件。格式与保留范围见[历史导入导出](src/services/chat/history/README.md)。
+AI 回答可能有误；卸载或更换安装前请备份数据。
 
-设置 → 数据管理 → 删除所有对话，会在确认后清空全部本地会话、附件原件和未发送的草稿，停止正在生成的回复并回到新对话。API Key 和其他设置保留，已上传到 API 服务的文件不受影响。
+## 构建
 
-## 开发
+需要 JDK 21 和 Android SDK 37，通过 ANDROID_HOME 或 android/local.properties 配置 SDK 路径。
 
-| 命令          | 用途                |
-| ------------- | ------------------- |
-| `pnpm dev`    | 启动开发服务器      |
-| `pnpm build`  | 构建到 `dist/`      |
-| `pnpm type`   | TypeScript 类型检查 |
-| `pnpm lint`   | oxlint 检查         |
-| `pnpm format` | oxfmt 格式化        |
+Windows：
 
-[rspack.config.ts](rspack.config.ts) 默认连接 `https://api.deepseek.com`。`createConfig({ apiOrigin, devServer })` 支持自定义 API 地址和开发服务器代理。
-
-聊天默认使用 `deepseek-flash`，通过 Anthropic 兼容的 Messages / Files API 通信；语音使用 ASR / TTS 接口。请求使用搜索、链接阅读、标题和 `latest_reminder` 等扩展，接入服务需支持相应能力。附件实际支持的格式以服务端校验为准。
-
-```text
-src/
-  app/                 应用布局、主题与全局样式
-  components/          聊天、设置、Markdown 等界面组件
-  i18n/                中英文文案
-  services/
-    api/               API 请求、SSE 与协议类型
-    chat/              会话、消息分支、本地存储与历史导入导出
-    markdown/          Markdown 解析、代码高亮与图表
-    speech/            录音与朗读
-  utils/               通用工具
-```
-
-## Android 原生版
-
-`android/` 是 Kotlin + Jetpack Compose 实现的原生 App：填入 DeepSeek API Key，在设置中导入官方导出的 `deepseek_data-*.zip` 即可继续对话。需要 JDK 21 与 Android SDK（compileSdk 37）：
-
-```sh
+~~~powershell
 cd android
-./gradlew :app:assembleDebug
-```
+.\gradlew.bat :app:assembleDebug
+~~~
 
-产物位于 `android/app/build/outputs/apk/debug/`。设计与模块划分见 [docs/android/PLAN.md](docs/android/PLAN.md)。
+macOS / Linux：
 
-## 许可证
+~~~sh
+cd android
+bash gradlew :app:assembleDebug
+~~~
 
-[MIT](LICENSE)。构建会将许可证复制到 `dist/LICENSE`，分发时请一并保留；第三方依赖遵循各自的许可证。
+调试 APK 输出到 android/app/build/outputs/apk/debug/。Release 构建启用 R8 和资源裁剪。
+
+GitHub Actions 中的 **Android release** 工作流使用仓库 Secrets 构建并签名 APK：ANDROID_KEYSTORE_BASE64、ANDROID_KEYSTORE_PASSWORD、ANDROID_KEY_ALIAS 和 ANDROID_KEY_PASSWORD。私钥不写入代码仓库。[正式版公开证书](android/signing/release-cert.pem)的 SHA-256 指纹为：
+
+~~~text
+C6:87:A3:EE:7E:87:B8:B6:65:51:B4:99:0D:A1:D4:2F:92:B6:1A:35:AD:30:FB:E1:1A:56:C5:B3:C1:BC:D7:60
+~~~
+
+## 许可
+
+ShallowDrop 自有代码默认采用 [MIT](LICENSE)，保留 DeepSeek 原始版权。单独标注许可的文件与第三方组件继续采用各自条款，包括 Apache-2.0、BSD 和 OFL-1.1。详细清单见 [Android 许可证与版权](docs/android/licenses.md)，也可在设置 → 关于 → 开源许可中查看。
+
+原有 Web 应用保留在 [main 分支](https://github.com/Small-tailqwq/ShallowDrop/tree/main)。

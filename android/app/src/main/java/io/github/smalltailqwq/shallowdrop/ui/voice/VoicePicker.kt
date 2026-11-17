@@ -31,9 +31,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import io.github.smalltailqwq.shallowdrop.ui.components.AppBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -203,9 +204,9 @@ fun VoicePickerSheet(
         onDispose { viewModel.stop() }
     }
     // 内容不高，直接完全展开（横屏时半展开会把名字挡在屏幕外）
-    ModalBottomSheet(
+    AppBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        skipPartiallyExpanded = true,
         containerColor = groupedPageColor(),
     ) {
         VoicePicker(
@@ -215,6 +216,7 @@ fun VoicePickerSheet(
             level = viewModel::level,
             onAudition = { viewModel.audition(it, samples.getValue(it)) },
             modifier = Modifier
+                .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(bottom = 16.dp),
         )

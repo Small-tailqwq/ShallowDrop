@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -125,7 +126,7 @@ fun ChatScreen(
         merge(viewModel.events, sessionList.events).collect { snackbar.showSnackbar(it.resolve(context)) }
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
         val wide = maxWidth >= WIDE_BREAKPOINT
         val drawerState = rememberDrawerState(DrawerValue.Closed)
         var siderVisible by rememberSaveable { mutableStateOf(true) }
@@ -252,7 +253,7 @@ private fun ChatContent(
     // 每个会话各自的跟随状态，打开会话时从底部开始
     val follow = rememberFollowState(state.sessionId)
     val scope = rememberCoroutineScope()
-    var sheetSources by remember { mutableStateOf<List<Source>?>(null) }
+    var sheetSources by remember { mutableStateOf<Pair<List<Source>, Int>?>(null) }
     val conversation = state.conversation
     val title = when {
         state.sessionId == null -> ""
@@ -266,7 +267,8 @@ private fun ChatContent(
             onContinue = viewModel::continueReply,
             onEdit = viewModel::editAndResend,
             onSwitchBranch = viewModel::switchBranch,
-            onOpenSources = { sheetSources = it },
+            onOpenSources = { sheetSources = it to R.string.search_results },
+            onOpenPages = { sheetSources = it to R.string.browsed_pages },
             onChangeApiKey = onOpenSettings,
         )
     }
@@ -384,8 +386,8 @@ private fun ChatContent(
         }
     }
 
-    sheetSources?.let { sources ->
-        SourcesSheet(sources, onDismiss = { sheetSources = null })
+    sheetSources?.let { (sources, title) ->
+        SourcesSheet(sources, title = title, onDismiss = { sheetSources = null })
     }
 }
 

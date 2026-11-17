@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 文案对照 src/i18n/en.ts；中文见 values-zh-rCN -->
 <resources>
+    <string name="browsed_pages">Browsed pages</string>
+    <string name="web_page_failed">Could not read this page</string>
+    <string name="sheet_expand">Expand panel</string>
+    <string name="sheet_collapse">Collapse panel</string>
+    <string name="sheet_close">Close panel</string>
     <string name="fork_conversation">Branch conversation</string>
     <string name="fork_unavailable">This reply cannot be branched</string>
     <string name="app_name" translatable="false">ShallowDrop</string>
@@ -78,7 +83,6 @@
         <item quantity="other">Read %d pages</item>
     </plurals>
     <string name="tool_open_fail">Read failed</string>
-    <string name="tool_open_view_all">View All</string>
     <string name="tool_find_fail">Find failed</string>
     <string name="tool_find_intro">Find keyword</string>
     <string name="reading_link">Reading</string>
@@ -116,6 +120,12 @@
     <string name="general">General</string>
     <string name="data">Data</string>
     <string name="about">About</string>
+    <string name="about_description">A lightweight native Android client for the DeepSeek API.</string>
+    <string name="disclaimer">Disclaimer</string>
+    <string name="disclaimer_body">ShallowDrop is an independent client adapted from the open-source DeepSeek chat demo. It is not an official DeepSeek app. Much of the project code was created with AI assistance.\n\nAPI access, availability and billing are governed by the service provider. This project does not provide API credits or guarantee the availability of external services.\n\nAI-generated answers may contain errors. Verify information before relying on it for important decisions.\n\nSending messages, uploading attachments and using voice or location features sends the relevant data to the API service. Only submit information you are authorized to share. Chat history is stored locally; export a backup before uninstalling the app or clearing its data.\n\nThe software is provided as is under its applicable open-source licenses, to the extent permitted by law. Copyright notices, license terms and warranty disclaimers are available in Open-source licenses.</string>
+    <string name="license_summary">MIT applies to project code unless a file states otherwise. The components below retain their own licenses.</string>
+    <string name="license_expanded">Expanded</string>
+    <string name="license_collapsed">Collapsed</string>
     <string name="language">Language</string>
     <string name="theme">Theme</string>
     <string name="chat_font_size">Chat font size</string>
@@ -140,7 +150,7 @@
     <string name="compaction_limits">Keep at least %1$d%% apart. Waiting is limited to %2$d%%.</string>
     <string name="compaction_save_failed">Could not save compaction thresholds. Try again.</string>
     <string name="version">Version</string>
-    <string name="license">License</string>
+    <string name="license">Open-source licenses</string>
     <string name="source_code">Source code</string>
 
     <!-- 数据 -->

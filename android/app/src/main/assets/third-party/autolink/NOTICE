@@ -1,0 +1,7 @@
+Autolink Java
+Robin Stocker
+License: MIT
+Source: https://github.com/robinst/autolink-java
+
+Runtime artifacts:
+org.nibor.autolink:autolink:0.12.0

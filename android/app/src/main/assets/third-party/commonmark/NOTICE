@@ -1,0 +1,10 @@
+CommonMark Java
+Atlassian and contributors
+License: BSD-2-Clause
+Source: https://github.com/commonmark/commonmark-java
+
+Runtime artifacts:
+org.commonmark:commonmark-ext-autolink:0.32.0
+org.commonmark:commonmark-ext-gfm-strikethrough:0.32.0
+org.commonmark:commonmark-ext-gfm-tables:0.32.0
+org.commonmark:commonmark:0.32.0

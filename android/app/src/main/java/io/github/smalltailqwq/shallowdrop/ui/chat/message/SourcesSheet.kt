@@ -12,11 +12,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.annotation.StringRes
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import io.github.smalltailqwq.shallowdrop.ui.components.AppBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,34 +29,39 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.Source
+import io.github.smalltailqwq.shallowdrop.ui.chat.reply.ToolStatus
 
 /** 来源面板：列出搜索结果，点击用浏览器打开。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SourcesSheet(sources: List<Source>, onDismiss: () -> Unit) {
+fun SourcesSheet(sources: List<Source>, @StringRes title: Int = R.string.search_results, onDismiss: () -> Unit) {
     val uriHandler = LocalUriHandler.current
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    AppBottomSheet(onDismissRequest = onDismiss) {
         Text(
-            stringResource(R.string.search_results),
+            stringResource(title),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
         )
         LazyColumn(Modifier.fillMaxWidth().navigationBarsPadding()) {
-            items(sources, key = { it.url }) { source ->
+            itemsIndexed(sources, key = { index, source -> "$index:${source.url}" }) { _, source ->
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .clickable { uriHandler.openWebUrl(source.url) }
+                        .clickable(enabled = source.status != ToolStatus.Failed && source.url.isNotBlank()) { uriHandler.openWebUrl(source.url) }
                         .padding(horizontal = 20.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
-                            Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
-                                Text("${source.index}", style = MaterialTheme.typography.labelSmall)
+                        if (source.index > 0) {
+                            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer) {
+                                Box(Modifier.size(20.dp), contentAlignment = Alignment.Center) {
+                                    Text("${source.index}", style = MaterialTheme.typography.labelSmall)
+                                }
                             }
+                            Spacer(Modifier.width(8.dp))
                         }
-                        Spacer(Modifier.width(8.dp))
+                        SourceIcon(source.siteIcon)
+                        Spacer(Modifier.width(6.dp))
                         Text(
                             listOfNotNull(source.siteName.ifEmpty { null }, source.publishedAt?.take(10)).joinToString("  ·  "),
                             style = MaterialTheme.typography.labelMedium,
@@ -65,6 +71,13 @@ fun SourcesSheet(sources: List<Source>, onDismiss: () -> Unit) {
                         )
                     }
                     Text(source.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (source.status == ToolStatus.Failed || source.status == ToolStatus.Wip) {
+                        Text(
+                            stringResource(if (source.status == ToolStatus.Failed) R.string.web_page_failed else R.string.reading_link),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (source.status == ToolStatus.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     source.snippet?.let {
                         Text(
                             it,

@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 文案对照 src/i18n/zh.ts -->
 <resources>
+    <string name="browsed_pages">浏览页面</string>
+    <string name="web_page_failed">未能读取此页面</string>
+    <string name="sheet_expand">展开面板</string>
+    <string name="sheet_collapse">收起面板</string>
+    <string name="sheet_close">关闭面板</string>
     <string name="fork_conversation">创建分支</string>
     <string name="fork_unavailable">无法从这条回复创建分支</string>
     <!-- 对话 -->
@@ -72,7 +77,6 @@
         <item quantity="other">浏览 %d 个页面</item>
     </plurals>
     <string name="tool_open_fail">浏览页面失败</string>
-    <string name="tool_open_view_all">查看全部</string>
     <string name="tool_find_fail">查找失败</string>
     <string name="tool_find_intro">查找关键词</string>
     <string name="reading_link">正在阅读</string>
@@ -108,6 +112,12 @@
     <string name="general">通用设置</string>
     <string name="data">数据管理</string>
     <string name="about">关于</string>
+    <string name="about_description">使用 DeepSeek API 的轻量原生 Android 客户端。</string>
+    <string name="disclaimer">免责声明</string>
+    <string name="disclaimer_body">ShallowDrop 基于 DeepSeek 开源的 chat demo 改造，是独立开发的第三方客户端，并非 DeepSeek 官方应用。项目大量代码借助 AI 编写。\n\nAPI 的使用、可用性与计费遵循服务提供方的条款。本项目不提供 API 额度，也不保证外部服务始终可用。\n\nAI 生成的回答可能存在错误。用于重要决策前，请核实相关信息。\n\n发送消息、上传附件以及使用语音或位置功能时，相应数据会提交给 API 服务。请仅提交你有权分享的内容。聊天历史保存在本地，卸载应用或清除数据前请导出备份。\n\n在适用法律允许的范围内，本软件依照相应开源许可证按原样提供。版权声明、许可条件与免责条款可在“开源许可”中查看。</string>
+    <string name="license_summary">除文件另有声明外，项目代码采用 MIT。下列组件保留各自的许可证。</string>
+    <string name="license_expanded">已展开</string>
+    <string name="license_collapsed">已收起</string>
     <string name="language">语言</string>
     <string name="theme">主题</string>
     <string name="chat_font_size">聊天字号</string>

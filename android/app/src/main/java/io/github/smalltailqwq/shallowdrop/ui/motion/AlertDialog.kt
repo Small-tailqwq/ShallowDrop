@@ -2,6 +2,7 @@ package io.github.smalltailqwq.shallowdrop.ui.motion
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
@@ -12,6 +13,7 @@ import io.github.smalltailqwq.shallowdrop.R
 fun AlertDialog(
     onDismissRequest: () -> Unit,
     confirmButton: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
     dismissButton: (@Composable () -> Unit)? = null,
     icon: (@Composable () -> Unit)? = null,
     title: @Composable () -> Unit,
@@ -19,6 +21,7 @@ fun AlertDialog(
     properties: DialogProperties = DialogProperties(),
 ) {
     androidx.compose.material3.AlertDialog(
+        modifier = modifier,
         onDismissRequest = onDismissRequest,
         confirmButton = confirmButton,
         dismissButton = dismissButton,

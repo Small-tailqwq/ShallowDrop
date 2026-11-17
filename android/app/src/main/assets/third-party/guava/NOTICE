@@ -1,0 +1,7 @@
+Guava ListenableFuture
+Google and contributors
+License: Apache-2.0
+Source: https://github.com/google/guava
+
+Runtime artifacts:
+com.google.guava:listenablefuture:1.0

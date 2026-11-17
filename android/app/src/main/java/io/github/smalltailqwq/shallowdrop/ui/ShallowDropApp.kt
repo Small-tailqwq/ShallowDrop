@@ -34,6 +34,8 @@ import io.github.smalltailqwq.shallowdrop.ui.components.LocalAttachmentFile
 import io.github.smalltailqwq.shallowdrop.ui.onboarding.OnboardingScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.FontSizeScreen
 import io.github.smalltailqwq.shallowdrop.ui.settings.LicenseScreen
+import io.github.smalltailqwq.shallowdrop.ui.settings.AboutScreen
+import io.github.smalltailqwq.shallowdrop.ui.settings.DisclaimerScreen
 import io.github.smalltailqwq.shallowdrop.ui.sider.SearchScreen
 import io.github.smalltailqwq.shallowdrop.ui.sider.SearchTarget
 import io.github.smalltailqwq.shallowdrop.ui.settings.ReplySwipeScreen
@@ -52,7 +54,7 @@ import kotlinx.serialization.Serializable
  *   ChatRoute       —— 对话页（会话切换在页内完成，不进返回栈）
  *   SearchRoute     —— 搜索会话（标题、消息、文件名），选中后回到对话页并打开
  *   VoiceRoute      —— 语音对话，挂断后回到对话页并打开写入的会话
- *   SettingsGraph   —— SettingsRoute、LicenseRoute、RechargeRoute、FontSizeRoute、ReplySwipeRoute
+ *   SettingsGraph   —— 设置、关于、免责声明、开源许可、充值、字号和回复滑动
  */
 
 @Serializable
@@ -70,6 +72,12 @@ data object SettingsGraph
 
 @Serializable
 data object SettingsRoute
+
+@Serializable
+data object AboutRoute
+
+@Serializable
+data object DisclaimerRoute
 
 @Serializable
 data object RechargeRoute
@@ -192,7 +200,7 @@ private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
             composable<SettingsRoute> {
                 SettingsScreen(
                     onBack = { navController.popBackStack() },
-                    onOpenLicense = { navController.navigate(LicenseRoute) },
+                    onOpenAbout = { navController.navigate(AboutRoute) { launchSingleTop = true } },
                     onOpenRecharge = { navController.navigate(RechargeRoute) { launchSingleTop = true } },
                     onOpenFontSize = { navController.navigate(FontSizeRoute) { launchSingleTop = true } },
                     onOpenReplySwipe = { navController.navigate(ReplySwipeRoute) { launchSingleTop = true } },
@@ -221,6 +229,16 @@ private fun AppNavHost(hasApiKey: Boolean, deps: UiDependencies) {
                     onSave = settingsViewModel::setReplySwipe,
                     onBack = { navController.popBackStack() },
                 )
+            }
+            composable<AboutRoute> {
+                AboutScreen(
+                    onBack = { navController.popBackStack() },
+                    onOpenLicense = { navController.navigate(LicenseRoute) { launchSingleTop = true } },
+                    onOpenDisclaimer = { navController.navigate(DisclaimerRoute) { launchSingleTop = true } },
+                )
+            }
+            composable<DisclaimerRoute> {
+                DisclaimerScreen(onBack = { navController.popBackStack() })
             }
             composable<LicenseRoute> {
                 LicenseScreen(onBack = { navController.popBackStack() })

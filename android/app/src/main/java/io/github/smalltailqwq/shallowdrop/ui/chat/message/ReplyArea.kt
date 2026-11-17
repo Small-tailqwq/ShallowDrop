@@ -65,7 +65,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -83,6 +82,7 @@ import io.github.smalltailqwq.shallowdrop.ui.chat.reply.ToolStatus
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.areaTitle
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.isDeepSearch
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.isImageSearch
+import io.github.smalltailqwq.shallowdrop.ui.chat.reply.siteNameOf
 import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
 import io.github.smalltailqwq.shallowdrop.ui.theme.LocalExtraColors
 import kotlinx.coroutines.delay
@@ -151,6 +151,7 @@ fun ReplyArea(
     hasResponse: Boolean,
     onOpenSources: (List<Source>) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenPages: (List<Source>) -> Unit = onOpenSources,
 ) {
     if (view.steps.isEmpty() && !(message.thinking && streaming)) return
     // null 表示用户未操作：跟随生成进度在小窗与收起之间切换
@@ -260,6 +261,7 @@ fun ReplyArea(
                             streaming = streaming,
                             isLast = index == view.steps.lastIndex,
                             onOpenSources = onOpenSources,
+                            onOpenPages = onOpenPages,
                         )
                     }
                 }
@@ -284,6 +286,7 @@ private fun StepItem(
     streaming: Boolean,
     isLast: Boolean,
     onOpenSources: (List<Source>) -> Unit,
+    onOpenPages: (List<Source>) -> Unit,
 ) {
     when (step) {
         is Step.Thinking -> {
@@ -304,20 +307,20 @@ private fun StepItem(
             }
         }
         is Step.Search -> SearchRow(step, message, streaming, isLast, onOpenSources)
-        is Step.Open -> OpenRow(step, sources, isLast, onOpenSources)
+        is Step.Open -> OpenRow(step, sources, isLast, onOpenPages)
         is Step.Find -> FindRow(step, isLast)
-        is Step.ReadLink -> TimelineRow(R.drawable.ic_link_outline_16, active = false, isLast = isLast) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    stringResource(R.string.reading_link),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.shimmer(true),
-                )
-                ChipFlow {
-                    step.links.forEach { PageChip(it) }
-                }
-            }
+        is Step.ReadLink -> TimelineRow(
+            R.drawable.ic_link_outline_16,
+            active = true,
+            isLast = isLast,
+            onClick = if (step.links.isNotEmpty()) ({ onOpenPages(pageSources(step.links, sources)) }) else null,
+        ) {
+            Text(
+                stringResource(R.string.reading_link),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.shimmer(true),
+            )
         }
     }
 }
@@ -334,40 +337,38 @@ private fun TimelineRow(
 ) {
     val line = LocalExtraColors.current.thinkingLine
     val headerHeight = with(LocalDensity.current) { MaterialTheme.typography.bodyMedium.lineHeight.toDp() }
-    // 竖线不参与高度测量，整行高度由右侧换行后的内容决定。
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .then(if (onClick != null) Modifier.pressClickable(onClick = onClick) else Modifier),
-    ) {
-        Box(Modifier.matchParentSize()) {
-            Box(Modifier.width(24.dp).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
-                if (!isLast) {
-                    Box(
-                        Modifier
-                            .padding(top = headerHeight / 2 + 11.dp)
-                            .width(1.dp)
-                            .fillMaxHeight()
-                            .background(line),
-                    )
-                }
-                Box(Modifier.fillMaxWidth().height(headerHeight), contentAlignment = Alignment.Center) {
-                    if (icon != null) {
-                        DsIcon(
-                            icon,
-                            contentDescription = null,
-                            tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(16.dp),
-                        )
-                    } else {
-                        Box(Modifier.size(7.dp).clip(CircleShape).background(if (active) MaterialTheme.colorScheme.primary else line))
-                    }
+    val bottomGap = if (isLast) 4.dp else 14.dp
+    // 点击反馈只包图标和内容；竖线与行间距位于独立绘制层。
+    Box(Modifier.fillMaxWidth()) {
+        if (!isLast) {
+            Box(Modifier.matchParentSize()) {
+                Box(Modifier.width(24.dp).fillMaxHeight(), contentAlignment = Alignment.BottomCenter) {
+                    val segment = if (onClick != null) Modifier.height(bottomGap)
+                        else Modifier.padding(top = headerHeight / 2 + 11.dp).fillMaxHeight()
+                    Box(segment.width(1.dp).background(line))
                 }
             }
         }
-        Box(Modifier.fillMaxWidth().padding(start = 30.dp, bottom = if (isLast) 4.dp else 14.dp)) {
-            content()
+        Row(
+            Modifier
+                .padding(bottom = bottomGap)
+                .then(if (onClick != null) Modifier.clip(RoundedCornerShape(8.dp)).pressClickable(onClick = onClick).heightIn(min = 48.dp) else Modifier),
+            verticalAlignment = if (onClick != null) Alignment.CenterVertically else Alignment.Top,
+        ) {
+            Box(Modifier.width(24.dp).height(headerHeight), contentAlignment = Alignment.Center) {
+                if (icon != null) {
+                    DsIcon(
+                        icon,
+                        contentDescription = null,
+                        tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp),
+                    )
+                } else {
+                    Box(Modifier.size(7.dp).clip(CircleShape).background(if (active) MaterialTheme.colorScheme.primary else line))
+                }
+            }
+            Spacer(Modifier.width(6.dp))
+            Box(Modifier.weight(1f, fill = false)) { content() }
         }
     }
 }
@@ -452,73 +453,41 @@ private fun SearchRow(
     }
 }
 
-@Composable
-private fun PageChip(page: PageItem) {
-    val uriHandler = LocalUriHandler.current
-    val failed = page.status == ToolStatus.Failed
-    Surface(
-        onClick = { uriHandler.openWebUrl(page.url) },
-        modifier = Modifier.widthIn(max = 240.dp),
-        enabled = !failed && page.url.isNotEmpty(),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-    ) {
-        Row(
-            Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                page.title,
-                style = MaterialTheme.typography.labelMedium,
-                color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            DsIcon(
-                R.drawable.ic_right_up_outline_14,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(12.dp),
-            )
-        }
+private fun pageSources(pages: List<PageItem>, sources: List<Source>): List<Source> {
+    val byUrl = sources.associateBy { it.url }
+    return pages.map { page ->
+        val source = byUrl[page.url] ?: Source(
+            url = page.url,
+            title = page.title.ifEmpty { page.url },
+            siteName = siteNameOf(page.url),
+            publishedAt = null,
+            snippet = null,
+            siteIcon = null,
+            index = 0,
+        )
+        source.copy(status = page.status)
     }
 }
 
-/** 边想边搜打开的网页：“浏览 N 个页面”+ 最多 5 个页面 */
+/** 边想边搜打开的网页：计数入口按需展开完整页面列表。 */
 @Composable
-private fun OpenRow(step: Step.Open, sources: List<Source>, isLast: Boolean, onOpenSources: (List<Source>) -> Unit) {
-    val allFailed = step.pages.all { it.status == ToolStatus.Failed }
+private fun OpenRow(step: Step.Open, sources: List<Source>, isLast: Boolean, onOpenPages: (List<Source>) -> Unit) {
+    val allFailed = step.pages.isNotEmpty() && step.pages.all { it.status == ToolStatus.Failed }
+    val wip = step.pages.any { it.status == ToolStatus.Wip }
     val count = step.pages.size
-    TimelineRow(if (allFailed) R.drawable.ic_browse_warning_outline_16 else R.drawable.ic_browse_outline_16, active = false, isLast = isLast, failed = allFailed) {
-        if (allFailed) {
-            Text(stringResource(R.string.tool_open_fail), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    pluralStringResource(R.plurals.tool_open_intro, count, count),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                ChipFlow {
-                    step.pages.take(5).forEach { PageChip(it) }
-                    if (count > 5) {
-                        Surface(
-                            onClick = { onOpenSources(sources.filter { source -> step.pages.any { it.url == source.url } }) },
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainer,
-                        ) {
-                            Text(
-                                stringResource(R.string.tool_open_view_all),
-                                style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            )
-                        }
-                    }
-                }
-            }
-        }
+    TimelineRow(
+        if (allFailed) R.drawable.ic_browse_warning_outline_16 else R.drawable.ic_browse_outline_16,
+        active = wip,
+        isLast = isLast,
+        failed = allFailed,
+        onClick = if (count > 0) ({ onOpenPages(pageSources(step.pages, sources)) }) else null,
+    ) {
+        Text(
+            if (allFailed) stringResource(R.string.tool_open_fail) else pluralStringResource(R.plurals.tool_open_intro, count, count),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.shimmer(wip),
+        )
     }
 }
 

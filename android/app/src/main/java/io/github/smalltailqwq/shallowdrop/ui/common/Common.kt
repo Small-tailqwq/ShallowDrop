@@ -2,11 +2,14 @@ package io.github.smalltailqwq.shallowdrop.ui.common
 
 import android.app.Application
 import android.content.Context
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import io.github.smalltailqwq.shallowdrop.ui.motion.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import io.github.smalltailqwq.shallowdrop.ui.motion.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.SavedStateHandle
@@ -59,7 +62,7 @@ fun ConfirmDialog(
     AlertDialog(
         onDismissRequest = { if (enabled) onDismiss() },
         title = { Text(title) },
-        text = text?.let { { Text(it) } },
+        text = text?.let { { Text(it, modifier = Modifier.verticalScroll(rememberScrollState())) } },
         confirmButton = {
             TextButton(onClick = onConfirm, enabled = enabled) {
                 Text(confirmLabel, color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)

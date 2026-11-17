@@ -104,11 +104,14 @@ internal fun CompactionScale(
     val textMeasurer = rememberTextMeasurer()
     val tickStyle = MaterialTheme.typography.labelSmall.copy(color = muted, fontFeatureSettings = "tnum")
     val labels = (0..100 step 20).map { textMeasurer.measure("$it", tickStyle) }
-    Box(Modifier.fillMaxWidth().height(176.dp).testTag("compaction_scale").onSizeChanged { width = it.width }
+    val trackY = 104.dp
+    val labelTop = trackY + 23.dp
+    val labelHeight = with(density) { labels.maxOf { it.size.height }.toDp() }
+    Box(Modifier.fillMaxWidth().height(labelTop + labelHeight).testTag("compaction_scale").onSizeChanged { width = it.width }
         .pointerInput(enabled, thresholds, width, rtl) {
             if (enabled) detectTapGestures { point ->
                 // 轨道选择就近指针；指针本身的点击不改变数值。
-                if (point.y >= 100.dp.toPx() && point.y <= 136.dp.toPx()) {
+                if (point.y >= (trackY - 16.dp).toPx() && point.y <= (trackY + 20.dp).toPx()) {
                     onInteractionStart()
                     val percent = ((point.x - inset) / trackWidth * 100).let { if (rtl) 100 - it else it }
                     update(abs(percent - background) <= abs(percent - foreground), percent.roundToInt().toFloat())
@@ -116,7 +119,7 @@ internal fun CompactionScale(
             }
         }) {
         Canvas(Modifier.fillMaxSize()) {
-            val y = 116.dp.toPx()
+            val y = trackY.toPx()
             val height = 14.dp.toPx()
             drawRoundRect(trackColor, Offset(inset, y - height / 2), Size(trackWidth, height), CornerRadius(height / 2))
             fun band(from: Float, to: Float, color: Color) {
@@ -126,13 +129,13 @@ internal fun CompactionScale(
             clipPath(Path().apply { addRoundRect(RoundRect(Rect(inset, y - height / 2, size.width - inset, y + height / 2), CornerRadius(height / 2))) }) {
                 band(0f, shownStart, startColor.copy(alpha = .22f))
                 band(shownStart, shownWait, waitColor.copy(alpha = .22f))
-            }
-            val cap = x(MAX_WAIT_PERCENT.toFloat())
-            clipRect(minOf(cap, x(100f)), y - height / 2, maxOf(cap, x(100f)), y + height / 2) {
-                var stripe = minOf(cap, x(100f)) - height
-                while (stripe < maxOf(cap, x(100f)) + height) {
-                    drawLine(muted.copy(alpha = .18f), Offset(stripe, y + height / 2), Offset(stripe + height, y - height / 2), 1.dp.toPx())
-                    stripe += 7.dp.toPx()
+                val cap = x(MAX_WAIT_PERCENT.toFloat())
+                clipRect(minOf(cap, x(100f)), y - height / 2, maxOf(cap, x(100f)), y + height / 2) {
+                    var stripe = minOf(cap, x(100f)) - height
+                    while (stripe < maxOf(cap, x(100f)) + height) {
+                        drawLine(muted.copy(alpha = .18f), Offset(stripe, y + height / 2), Offset(stripe + height, y - height / 2), 1.dp.toPx())
+                        stripe += 7.dp.toPx()
+                    }
                 }
             }
             for (percent in 0..100 step 5) {

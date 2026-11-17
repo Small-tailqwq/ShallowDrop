@@ -1,0 +1,9 @@
+OkHttp and Okio
+Square and contributors
+License: Apache-2.0
+Source: https://github.com/square/okhttp
+https://github.com/square/okio
+
+Runtime artifacts:
+com.squareup.okhttp3:okhttp-android:5.5.1
+com.squareup.okio:okio-jvm:3.18.1

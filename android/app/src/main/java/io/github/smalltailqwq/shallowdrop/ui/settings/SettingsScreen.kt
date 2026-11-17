@@ -3,7 +3,6 @@ package io.github.smalltailqwq.shallowdrop.ui.settings
 import android.content.ClipboardManager
 import android.content.Context
 import android.net.Uri
-import android.os.SystemClock
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -33,9 +32,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.BrokenImage
-import androidx.compose.material.icons.outlined.Gavel
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.LocationOn
 import androidx.compose.material.icons.outlined.Key
@@ -72,7 +69,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -80,7 +76,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import io.github.smalltailqwq.shallowdrop.BuildConfig
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.contract.ImageRestoreState
 import io.github.smalltailqwq.shallowdrop.core.model.AppLocale
@@ -92,17 +87,11 @@ import io.github.smalltailqwq.shallowdrop.ui.common.GetApiKeyButton
 import io.github.smalltailqwq.shallowdrop.ui.common.resolve
 import io.github.smalltailqwq.shallowdrop.ui.components.BackButton
 import io.github.smalltailqwq.shallowdrop.ui.components.DsIcon
-import io.github.smalltailqwq.shallowdrop.ui.easteregg.PelicanEasterEgg
-import io.github.smalltailqwq.shallowdrop.ui.easteregg.RideStyle
-import io.github.smalltailqwq.shallowdrop.ui.easteregg.VersionTapTrigger
 import io.github.smalltailqwq.shallowdrop.ui.voice.VoicePickerSheet
 import io.github.smalltailqwq.shallowdrop.ui.voice.label
 import io.github.smalltailqwq.shallowdrop.ui.theme.groupedCardColor
 import io.github.smalltailqwq.shallowdrop.ui.theme.groupedPageColor
 import java.time.LocalDate
-
-/** TODO 发布前确认开源仓库地址 */
-const val SOURCE_CODE_URL = "https://github.com/Small-tailqwq/ShallowDrop"
 
 private enum class SettingsDialog { Location, Recharge, ApiKey, Language, Theme, Model, Compaction, Voice, ImportSource, ImportConfirm, DeleteAll }
 
@@ -111,7 +100,7 @@ private enum class SettingsDialog { Location, Recharge, ApiKey, Language, Theme,
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
-    onOpenLicense: () -> Unit,
+    onOpenAbout: () -> Unit,
     onOpenRecharge: () -> Unit = {},
     onOpenFontSize: () -> Unit = {},
     onOpenReplySwipe: () -> Unit = {},
@@ -126,18 +115,15 @@ fun SettingsScreen(
     val haptic = LocalHapticFeedback.current
     val balance by balanceViewModel.state.collectAsStateWithLifecycle()
     val acceptingRecharge by viewModel.acceptingRecharge.collectAsStateWithLifecycle()
-    val versionTaps = remember { VersionTapTrigger() }
-    var rideStyle by rememberSaveable { mutableStateOf<RideStyle?>(null) }
     androidx.lifecycle.compose.LifecycleResumeEffect(balanceViewModel) {
         balanceViewModel.refresh()
-        onPauseOrDispose { versionTaps.reset() }
+        onPauseOrDispose { }
     }
     val task by viewModel.task.collectAsStateWithLifecycle()
     val imageRestore by viewModel.imageRestore.collectAsStateWithLifecycle()
     val maskedKey by viewModel.maskedKey.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val context = LocalContext.current
-    val uriHandler = LocalUriHandler.current
     var dialog by rememberSaveable { mutableStateOf<SettingsDialog?>(null) }
     var pendingImport by rememberSaveable { mutableStateOf<Uri?>(null) }
     var pendingLink by rememberSaveable { mutableStateOf<String?>(null) }
@@ -284,25 +270,14 @@ fun SettingsScreen(
                         enabled = !busy,
                     ) { dialog = SettingsDialog.DeleteAll }
                 }
-                Section(stringResource(R.string.about)) {
-                    Text(stringResource(R.string.project_notice), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
-                    SettingRow(rememberVectorPainter(Icons.Outlined.Info), stringResource(R.string.version), BuildConfig.VERSION_NAME, chevron = false) {
-                        if (versionTaps.tap(SystemClock.uptimeMillis())) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            rideStyle = RideStyle.entries.random()
-                        }
-                    }
-                    SettingRow(rememberVectorPainter(Icons.Outlined.Gavel), stringResource(R.string.license), "MIT", onClick = onOpenLicense)
-                    SettingRow(rememberVectorPainter(Icons.Outlined.Code), stringResource(R.string.source_code), trailing = painterResource(R.drawable.ic_right_up_outline_14)) {
-                        uriHandler.openUri(SOURCE_CODE_URL)
-                    }
+                Spacer(Modifier.height(18.dp))
+                Surface(shape = RoundedCornerShape(16.dp), color = groupedCardColor()) {
+                    SettingRow(rememberVectorPainter(Icons.Outlined.Info), stringResource(R.string.about), onClick = onOpenAbout)
                 }
                 Spacer(Modifier.height(24.dp))
             }
         }
     }
-
-    rideStyle?.let { style -> PelicanEasterEgg(style, onDismiss = { rideStyle = null }) }
 
     when (dialog) {
         SettingsDialog.Location -> LocationDialog(settings.location,
@@ -427,7 +402,7 @@ private fun ImportSourceDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.history_import)) },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = link,
                     onValueChange = onLinkChange,
@@ -489,7 +464,7 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun SettingRow(
+internal fun SettingRow(
     icon: Painter,
     title: String,
     value: String? = null,
@@ -549,7 +524,7 @@ private fun <T> ChoiceDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(Modifier.selectableGroup()) {
+            Column(Modifier.verticalScroll(rememberScrollState()).selectableGroup()) {
                 options.forEach { option ->
                     Row(
                         Modifier
@@ -577,7 +552,7 @@ private fun ApiKeyDialog(viewModel: SettingsViewModel, hasKey: Boolean, onDismis
         onDismissRequest = { if (!state.verifying) onDismiss() },
         title = { Text(stringResource(if (hasKey) R.string.api_key_edit else R.string.api_key_start)) },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 ApiKeyField(
                     state = state,
                     onValueChange = viewModel.apiKeyForm::onValueChange,

@@ -49,6 +49,7 @@ class MessageActions(
     val onOpenSources: (List<Source>) -> Unit,
     val onChangeApiKey: () -> Unit,
     val onFork: (String) -> Unit = {},
+    val onOpenPages: (List<Source>) -> Unit = onOpenSources,
 )
 
 /**
@@ -184,6 +185,7 @@ fun MessageList(
                                 actions.onSwitchBranch(message.id, i)
                             },
                             onOpenSources = actions.onOpenSources,
+                            onOpenPages = actions.onOpenPages,
                             onFork = { actions.onFork(message.id) },
                             onChangeApiKey = actions.onChangeApiKey,
                             onNewChat = onNewChat,

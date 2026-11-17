@@ -23,6 +23,8 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -33,6 +35,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.model.CompactionThresholds
 import io.github.smalltailqwq.shallowdrop.core.model.CompactionThresholds.Companion.MIN_GAP_PERCENT
@@ -57,6 +60,13 @@ internal fun CompactionDialog(
     val focus = LocalFocusManager.current
     val startColor = MaterialTheme.colorScheme.primary
     val waitColor = if (MaterialTheme.colorScheme.surface.luminance() < .5f) Color(0xFF91D5A8) else Color(0xFF26734D)
+    val window = LocalWindowInfo.current.containerSize
+    val direction = LocalLayoutDirection.current
+    val insets = WindowInsets.safeDrawing
+    val windowWidth = with(LocalDensity.current) {
+        (window.width - insets.getLeft(this, direction) - insets.getRight(this, direction)).toDp()
+    }
+    val wide = window.width > window.height && windowWidth >= 640.dp
 
     fun commitBackground() {
         background = (backgroundText.toIntOrNull() ?: background).coerceIn(MIN_PERCENT, foreground - MIN_GAP_PERCENT)
@@ -67,57 +77,76 @@ internal fun CompactionDialog(
         foregroundText = foreground.toString()
     }
 
+    val controls: @Composable () -> Unit = {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("compaction_enabled")
+            .toggleable(enabled, enabled = !saving, role = Role.Switch, onValueChange = {
+                focus.clearFocus()
+                enabled = it
+            }), verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.compaction_enable), modifier = Modifier.weight(1f))
+            Switch(checked = enabled, onCheckedChange = null, enabled = !saving)
+        }
+        if (!enabled) Text(stringResource(R.string.compaction_disabled_help),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(Modifier.alpha(if (enabled) 1f else 0.5f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            CompactionPercentField(
+                label = stringResource(R.string.compaction_background), tag = "compaction_background", color = startColor,
+                value = backgroundText, enabled = enabled && !saving,
+                onValueChange = { text ->
+                    backgroundText = text
+                    text.toIntOrNull()?.takeIf { it in MIN_PERCENT..foreground - MIN_GAP_PERCENT }?.let { background = it }
+                },
+                onCommit = ::commitBackground,
+                imeAction = ImeAction.Next,
+                keyboardActions = KeyboardActions(onNext = { commitBackground(); focus.moveFocus(FocusDirection.Next) }),
+            )
+            CompactionPercentField(
+                label = stringResource(R.string.compaction_foreground), tag = "compaction_foreground", color = waitColor,
+                value = foregroundText, enabled = enabled && !saving,
+                onValueChange = { text ->
+                    foregroundText = text
+                    text.toIntOrNull()?.takeIf { it in background + MIN_GAP_PERCENT..MAX_WAIT_PERCENT }?.let { foreground = it }
+                },
+                onCommit = ::commitForeground,
+                imeAction = ImeAction.Done,
+                keyboardActions = KeyboardActions(onDone = { commitForeground(); focus.clearFocus() }),
+            )
+        }
+    }
+    val diagram: @Composable () -> Unit = {
+        Column(Modifier.alpha(if (enabled) 1f else 0.5f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            CompactionScale(
+                thresholds = CompactionThresholds(background, foreground),
+                startColor = startColor, waitColor = waitColor, enabled = enabled && !saving,
+                onInteractionStart = { focus.clearFocus() },
+                onChange = {
+                    background = it.backgroundPercent
+                    foreground = it.foregroundPercent
+                    backgroundText = background.toString()
+                    foregroundText = foreground.toString()
+                },
+            )
+            Text(stringResource(R.string.compaction_limits, MIN_GAP_PERCENT, MAX_WAIT_PERCENT),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("compaction_limits"))
+        }
+    }
     AlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
+        modifier = if (wide) Modifier.width((windowWidth - 48.dp).coerceAtMost(840.dp)) else Modifier,
+        properties = DialogProperties(usePlatformDefaultWidth = !wide),
         title = { Text(stringResource(R.string.compaction_title)) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("compaction_enabled")
-                    .toggleable(enabled, enabled = !saving, role = Role.Switch, onValueChange = {
-                        focus.clearFocus()
-                        enabled = it
-                    }), verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.compaction_enable), modifier = Modifier.weight(1f))
-                    Switch(checked = enabled, onCheckedChange = null, enabled = !saving)
+            val scroll = rememberScrollState()
+            if (wide) {
+                Row(Modifier.fillMaxWidth().verticalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) { controls() }
+                    Column(Modifier.weight(1f)) { diagram() }
                 }
-                if (!enabled) Text(stringResource(R.string.compaction_disabled_help),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Column(Modifier.alpha(if (enabled) 1f else 0.5f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    CompactionPercentField(
-                        label = stringResource(R.string.compaction_background), tag = "compaction_background", color = startColor,
-                        value = backgroundText, enabled = enabled && !saving,
-                        onValueChange = { text ->
-                            backgroundText = text
-                            text.toIntOrNull()?.takeIf { it in MIN_PERCENT..foreground - MIN_GAP_PERCENT }?.let { background = it }
-                        },
-                        onCommit = ::commitBackground,
-                        imeAction = ImeAction.Next,
-                        keyboardActions = KeyboardActions(onNext = { commitBackground(); focus.moveFocus(FocusDirection.Next) }),
-                    )
-                    CompactionPercentField(
-                        label = stringResource(R.string.compaction_foreground), tag = "compaction_foreground", color = waitColor,
-                        value = foregroundText, enabled = enabled && !saving,
-                        onValueChange = { text ->
-                            foregroundText = text
-                            text.toIntOrNull()?.takeIf { it in background + MIN_GAP_PERCENT..MAX_WAIT_PERCENT }?.let { foreground = it }
-                        },
-                        onCommit = ::commitForeground,
-                        imeAction = ImeAction.Done,
-                        keyboardActions = KeyboardActions(onDone = { commitForeground(); focus.clearFocus() }),
-                    )
-                    CompactionScale(
-                        thresholds = CompactionThresholds(background, foreground),
-                        startColor = startColor, waitColor = waitColor, enabled = enabled && !saving,
-                        onInteractionStart = { focus.clearFocus() },
-                        onChange = {
-                            background = it.backgroundPercent
-                            foreground = it.foregroundPercent
-                            backgroundText = background.toString()
-                            foregroundText = foreground.toString()
-                        },
-                    )
-                    Text(stringResource(R.string.compaction_limits, MIN_GAP_PERCENT, MAX_WAIT_PERCENT),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Column(Modifier.verticalScroll(scroll), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    controls()
+                    diagram()
                 }
             }
         },

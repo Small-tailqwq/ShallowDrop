@@ -1,0 +1,9 @@
+JetBrains annotations and JSpecify
+JetBrains and JSpecify contributors
+License: Apache-2.0
+Source: https://github.com/JetBrains/java-annotations
+https://github.com/jspecify/jspecify
+
+Runtime artifacts:
+org.jetbrains:annotations:23.0.0
+org.jspecify:jspecify:1.0.0

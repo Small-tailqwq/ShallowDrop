@@ -135,9 +135,14 @@ val MessageTextStyle: TextStyle @Composable get() = MaterialTheme.typography.bod
 /** 聊天内容独立缩放，工具按钮与导航保持原有大小。 */
 @Composable
 fun ChatTextTheme(size: ChatFontSize, content: @Composable () -> Unit) {
+    ChatTextTheme(size.sp.toFloat(), content)
+}
+
+@Composable
+fun ChatTextTheme(sizeSp: Float, content: @Composable () -> Unit) {
     val base = MaterialTheme.typography
-    val typography = remember(base, size) {
-        val scale = size.sp / 16f
+    val typography = remember(base, sizeSp) {
+        val scale = sizeSp / 16f
         fun TextStyle.scaled() = copy(fontSize = fontSize * scale, lineHeight = lineHeight * scale)
         base.copy(
             bodyLarge = base.bodyLarge.scaled(),

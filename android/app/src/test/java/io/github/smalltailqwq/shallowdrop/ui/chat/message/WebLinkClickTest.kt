@@ -17,6 +17,7 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.core.app.ApplicationProvider
 import io.github.smalltailqwq.shallowdrop.core.model.Message
@@ -44,6 +45,7 @@ class WebLinkClickTest {
     private enum class Entry { Page, Sources, Citation }
     private var url by mutableStateOf("https://example.com/page")
     private var missingActivity = false
+    private var pageListOpen by mutableStateOf(false)
     private val opened = mutableListOf<String>()
     private val uriHandler = AndroidUriHandler(object : ContextWrapper(ApplicationProvider.getApplicationContext<Context>()) {
         override fun startActivity(intent: Intent) {
@@ -65,7 +67,11 @@ class WebLinkClickTest {
                     val view = buildReplyView(message, streaming = false)
                     Surface {
                         when (entry) {
-                            Entry.Page -> ReplyArea(message, view, streaming = false, hasResponse = true, onOpenSources = {})
+                            Entry.Page -> {
+                                ReplyArea(message, view, streaming = false, hasResponse = true,
+                                    onOpenSources = {}, onOpenPages = { pageListOpen = true })
+                                if (pageListOpen) SourcesSheet(view.sources, onDismiss = { pageListOpen = false })
+                            }
                             Entry.Sources -> SourcesSheet(view.sources, onDismiss = {})
                             Entry.Citation -> MessageMarkdown(requireNotNull(view.answer).markdown, view.sources)
                         }
@@ -76,6 +82,9 @@ class WebLinkClickTest {
     }
 
     private fun click(entry: Entry) {
+        if (entry == Entry.Page && !pageListOpen) {
+            compose.onNodeWithText("浏览 1 个页面").assertIsDisplayed().performClick()
+        }
         if (entry == Entry.Citation) {
             compose.onNodeWithText("1").assertIsDisplayed().performSemanticsAction(SemanticsActions.OnClick) { it() }
         } else {

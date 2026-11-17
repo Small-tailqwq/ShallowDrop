@@ -1,86 +1,61 @@
-# chat-demo
+# ShallowDrop
 
-English | [简体中文](README.zh-CN.md)
+[简体中文](README.zh-CN.md) · [Android releases](https://github.com/Small-tailqwq/ShallowDrop/releases) · [Web branch](https://github.com/Small-tailqwq/ShallowDrop/tree/main)
 
-A static chat demo powered by the DeepSeek API. No application backend is required: the browser connects directly to the configured API service.
+A lightweight native Android client for DeepSeek, built with Kotlin and Jetpack Compose. Bring your own DeepSeek API key. This is an independent community project based on DeepSeek's chat-demo.
 
-You can [try the app online](https://deepseek-ai.github.io/chat-demo/) or download the archive from [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases), extract it, and double-click `index.html` to use it locally without installation or a build. Enter your API key in Settings before your first chat.
+## Install
 
-## Getting started
+Version 0.1.0 is being prepared for release. Published packages will appear on the [releases page](https://github.com/Small-tailqwq/ShallowDrop/releases); to try the current source, follow the build instructions below. Android 8.0 or later is required; the universal APK supports arm64-v8a, armeabi-v7a, x86 and x86_64.
 
-Install Node.js 22.12+ and pnpm, then run:
-
-```sh
-git clone https://github.com/deepseek-ai/chat-demo.git
-cd chat-demo
-pnpm install
-pnpm dev
-```
-
-Open http://localhost:8090.
-
-To build the static site:
-
-```sh
-pnpm build
-```
-
-The output is written to `dist/`. Deploy it to a static web server or open `dist/index.html` directly. Opening the file directly requires browser support for storage on `file://` pages and an API service that permits their cross-origin requests.
+**Moving from a development build:** export your data in Settings before uninstalling it, then install 0.1.0 and import the backup. The official release uses a new signing certificate and cannot update an installation signed with the development key.
 
 ## Features
 
-- Multiple conversations with automatic titles, renaming, and deletion; edit prompts, regenerate replies, and switch between message branches.
-- Streaming replies, deep thinking, smart search, link reading, and source citations; stop generation or continue eligible replies.
-- Upload, paste, or drag and drop attachments; use voice input and read replies aloud. A live audio spectrum appears in the first row of the input area while recording on mobile.
-- Markdown, syntax highlighting, KaTeX math, and Mermaid diagrams.
-- Simplified Chinese and English, light and dark themes, mobile layouts, location settings, and chat history import and export.
+- Streaming conversations, thinking, web search and references.
+- Image and file attachments, speech input and text-to-speech.
+- Markdown, code blocks, tables, math and chemistry formulas.
+- Retry history and conversation branches. Fork a completed assistant message into a separate conversation; branches use titles such as #1, #2 and #1-1.
+- Conversation search, local history, backup import/export and context compaction.
+- Theme, language, font-size and navigation preferences.
+- Settings → About: app information, disclaimer, source code and component licenses.
 
-## Data and storage
+Long conversations load the selected conversation path, while retry history is read as needed. Storage, retry, package-size and cold-start measurements are documented in the [Android performance report](docs/android/performance-2026-11-17.md).
 
-Your API key and settings are stored in the browser's localStorage. Conversations and original attachments are stored in IndexedDB. Local data is isolated by browser profile and site origin. Sending messages, uploading attachments, and using speech features sends the relevant content to the configured API service.
+## Data
 
-History import and export in Settings use ZIP archives. After confirmation and successful validation, importing replaces all local conversations and attachments. Exports include conversations and locally available original images, but exclude API keys, settings, and original non-image attachments. See the [history import/export documentation (Chinese)](src/services/chat/history/README.md) for the archive format and preservation details.
+Conversations and attachments are stored on the device. The API key is encrypted with AES-256-GCM using Android Keystore. Requests send the relevant conversation content and attachments to the API provider; provider terms, privacy policy and usage charges apply. ShallowDrop does not require a separate application backend.
 
-Settings → Data → Delete all chats clears all local conversations, original attachments, and unsent drafts after confirmation. It stops ongoing replies and returns to a new chat. Your API key and settings are preserved; files already uploaded to the API service are not deleted.
+AI output can be inaccurate. Keep backups before uninstalling or replacing the app.
 
-## Development
+## Build
 
-| Command       | Description                  |
-| ------------- | ---------------------------- |
-| `pnpm dev`    | Start the development server |
-| `pnpm build`  | Build into `dist/`           |
-| `pnpm type`   | Run TypeScript type checks   |
-| `pnpm lint`   | Lint with oxlint             |
-| `pnpm format` | Format with oxfmt            |
+Use JDK 21 and Android SDK 37. Set ANDROID_HOME or configure android/local.properties for your SDK.
 
-[rspack.config.ts](rspack.config.ts) uses `https://api.deepseek.com` by default. Use `createConfig({ apiOrigin, devServer })` to customize the API origin and development server proxy.
+Windows:
 
-Chat uses `deepseek-flash` by default through Anthropic-compatible Messages / Files APIs. Speech features use ASR / TTS endpoints. Requests include extensions for search, link reading, titles, and `latest_reminder`, so the configured service must support the corresponding capabilities. Supported attachment formats are determined by server-side validation.
-
-```text
-src/
-  app/                 Application layout, themes, and global styles
-  components/          Chat, settings, Markdown, and other UI components
-  i18n/                English and Chinese translations
-  services/
-    api/               API requests, SSE, and protocol types
-    chat/              Conversations, message branches, storage, and history import/export
-    markdown/          Markdown parsing, syntax highlighting, and diagrams
-    speech/            Audio recording and read-aloud playback
-  utils/               Shared utilities
-```
-
-## Android app
-
-`android/` contains a native Kotlin + Jetpack Compose app: enter your DeepSeek API key, import the official `deepseek_data-*.zip` export in Settings, and continue your conversations. Requires JDK 21 and the Android SDK (compileSdk 37):
-
-```sh
+~~~powershell
 cd android
-./gradlew :app:assembleDebug
-```
+.\gradlew.bat :app:assembleDebug
+~~~
 
-The APK is written to `android/app/build/outputs/apk/debug/`. See [docs/android/PLAN.md](docs/android/PLAN.md) (Chinese) for the design.
+macOS / Linux:
+
+~~~sh
+cd android
+bash gradlew :app:assembleDebug
+~~~
+
+The debug APK is written to android/app/build/outputs/apk/debug/. Release builds enable R8 and resource shrinking.
+
+The **Android release** GitHub Actions workflow builds and signs an APK using repository secrets: ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD. The private key is not stored in the repository. The [public release certificate](android/signing/release-cert.pem) has SHA-256 fingerprint:
+
+~~~text
+C6:87:A3:EE:7E:87:B8:B6:65:51:B4:99:0D:A1:D4:2F:92:B6:1A:35:AD:30:FB:E1:1A:56:C5:B3:C1:BC:D7:60
+~~~
 
 ## License
 
-[MIT](LICENSE). The build copies the license to `dist/LICENSE`; include it when distributing the app. Third-party dependencies are subject to their own licenses.
+[MIT](LICENSE) is the default license for ShallowDrop code, with the original DeepSeek copyright retained. Individually licensed files and third-party components retain their own terms, including Apache-2.0, BSD and OFL-1.1. See the [Android license inventory](docs/android/licenses.md) or Settings → About → Open-source licenses.
+
+The original web application remains on the [main branch](https://github.com/Small-tailqwq/ShallowDrop/tree/main).

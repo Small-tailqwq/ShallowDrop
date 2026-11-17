@@ -72,6 +72,7 @@ fun AssistantMessage(
     /** 设置页演示：画出横滑的死区与触发距离 */
     swipeGuide: Boolean = false,
     onFork: () -> Unit = {},
+    onOpenPages: (List<Source>) -> Unit = onOpenSources,
 ) {
     val message = turn.message as Message.Assistant
     val view = remember(message, streaming) { buildReplyView(message, streaming) }
@@ -100,6 +101,7 @@ fun AssistantMessage(
                     streaming = streaming,
                     hasResponse = responseText.isNotEmpty(),
                     onOpenSources = onOpenSources,
+                    onOpenPages = onOpenPages,
                     modifier = Modifier.padding(bottom = 4.dp),
                 )
             }

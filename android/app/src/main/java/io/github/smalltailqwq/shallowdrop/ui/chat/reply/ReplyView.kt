@@ -14,7 +14,7 @@ import kotlin.math.roundToLong
  * 思考与工具步骤时间线、带引用标记的正文、可引用来源与搜索结果。只读计算，不改动内容块。
  */
 
-/** 可引用来源；index 为角标编号，从 1 开始。 */
+/** 网页来源；index 为从 1 开始的引用编号，0 表示没有正文引用编号。 */
 data class Source(
     val url: String,
     val title: String,
@@ -24,6 +24,7 @@ data class Source(
     val snippet: String?,
     val siteIcon: String?,
     val index: Int,
+    val status: ToolStatus? = null,
 )
 
 enum class ToolStatus { Wip, Done, Failed }

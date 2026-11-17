@@ -152,36 +152,39 @@ fun ChatInputBar(
                     TogglePill(R.drawable.ic_think_outline_14, stringResource(R.string.thinking_switch), state.settings.thinking, onToggleThinking)
                     TogglePill(R.drawable.ic_globe_language_outline_14, stringResource(R.string.search_switch), state.settings.search, onToggleSearch)
                 }
-                Box {
-                    IconButton(onClick = { attachMenu = true }, modifier = Modifier.size(40.dp)) {
-                        DsIcon(R.drawable.ic_paperclip_outline_16, contentDescription = stringResource(R.string.upload_file), modifier = Modifier.size(22.dp))
+                // 与胶囊的最小交互高度一致，窄屏换行时仍对齐最后一行的中心。
+                Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box {
+                        IconButton(onClick = { attachMenu = true }, modifier = Modifier.size(40.dp)) {
+                            DsIcon(R.drawable.ic_paperclip_outline_16, contentDescription = stringResource(R.string.upload_file), modifier = Modifier.size(22.dp))
+                        }
+                        DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.attach_image)) },
+                                leadingIcon = { Icon(painterResource(R.drawable.ic_file_image), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(24.dp)) },
+                                onClick = {
+                                    attachMenu = false
+                                    imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.attach_file)) },
+                                leadingIcon = { Icon(painterResource(R.drawable.ic_file_other), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(24.dp)) },
+                                onClick = {
+                                    attachMenu = false
+                                    filePicker.launch(DOCUMENT_TYPES)
+                                },
+                            )
+                        }
                     }
-                    DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.attach_image)) },
-                            leadingIcon = { Icon(painterResource(R.drawable.ic_file_image), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(24.dp)) },
-                            onClick = {
-                                attachMenu = false
-                                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.attach_file)) },
-                            leadingIcon = { Icon(painterResource(R.drawable.ic_file_other), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(24.dp)) },
-                            onClick = {
-                                attachMenu = false
-                                filePicker.launch(DOCUMENT_TYPES)
-                            },
-                        )
-                    }
-                }
-                Spacer(Modifier.width(2.dp))
-                if (state.generating) {
-                    RoundAction(R.drawable.ic_stop_fill_16, stringResource(R.string.stop), enabled = true, onClick = onStop)
-                } else {
-                    RoundAction(R.drawable.ic_send_outline_16, stringResource(R.string.send), enabled = state.canSend) {
-                        focusManager.clearFocus()
-                        onSend()
+                    Spacer(Modifier.width(2.dp))
+                    if (state.generating) {
+                        RoundAction(R.drawable.ic_stop_fill_16, stringResource(R.string.stop), enabled = true, onClick = onStop)
+                    } else {
+                        RoundAction(R.drawable.ic_send_outline_16, stringResource(R.string.send), enabled = state.canSend) {
+                            focusManager.clearFocus()
+                            onSend()
+                        }
                     }
                 }
             }
