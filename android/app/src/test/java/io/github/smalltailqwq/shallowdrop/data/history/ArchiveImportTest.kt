@@ -1,6 +1,7 @@
 package io.github.smalltailqwq.shallowdrop.data.history
 
 import io.github.smalltailqwq.shallowdrop.core.contract.HistoryException
+import io.github.smalltailqwq.shallowdrop.core.model.FileAttachment
 import io.github.smalltailqwq.shallowdrop.core.model.Message
 import io.github.smalltailqwq.shallowdrop.core.model.ReplyBlock
 import io.github.smalltailqwq.shallowdrop.core.model.ReplyStatus
@@ -11,9 +12,16 @@ import io.github.smalltailqwq.shallowdrop.data.db.TestEnv
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -420,6 +428,62 @@ class ArchiveImportTest {
             .first().jsonObject["fragments"]!!.let { it as kotlinx.serialization.json.JsonArray }
             .first().jsonObject["files"] as kotlinx.serialization.json.JsonArray
         assertEquals("null", (files[1] as JsonObject)["export_path"].toString())
+    }
+
+    @Test
+    fun exportKeepsSessionSnapshotAndImageDuringConcurrentEditsAndDeletion() = runBlocking {
+        val png = Fx.PNG.copyOf(32 * 1024)
+        val image = FileAttachment("image", name = "a.png", size = png.size.toLong(), isImage = true, mimeType = "image/png")
+        val original = Message.User("u", 1000, content = "原始提问", files = listOf(image))
+        val session = Session("original", "原始标题", 1000, 2000, listOf(original), original.id)
+        val largeQuestion = Message.User("large-u", 2000, content = "A".repeat(24 * 1024))
+        store.save(Session("large", "长对话", 2000, 3000, listOf(largeQuestion), largeQuestion.id))
+        attachments.put(image, png.inputStream())
+        store.save(session)
+
+        val writingSessions = CompletableDeferred<Unit>()
+        val writeSessions = CountDownLatch(1)
+        val writingImage = CompletableDeferred<Unit>()
+        val writeImage = CountDownLatch(1)
+        val out = object : ByteArrayOutputStream() {
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                if (writingSessions.complete(Unit)) check(writeSessions.await(10, TimeUnit.SECONDS))
+                if (length == png.size && writingImage.complete(Unit)) check(writeImage.await(10, TimeUnit.SECONDS))
+                super.write(bytes, offset, length)
+            }
+        }
+
+        val exporting = async { backup.exportTo { out } }
+        try {
+            withTimeout(5000) { writingSessions.await() }
+            val editing = async {
+                store.rename(session.id, "新标题")
+                store.upsertMessages(session.id, listOf(original.copy(content = "新提问")), 4000, original.id)
+            }
+            assertNull(withTimeoutOrNull(250) { editing.await() })
+            writeSessions.countDown()
+            withTimeout(5000) { writingImage.await() }
+            withTimeout(5000) { editing.await() }
+
+            val deleting = async { store.delete(session.id) }
+            assertNull(withTimeoutOrNull(250) { deleting.await() })
+            assertTrue(attachments.file(image.id)!!.isFile)
+            writeImage.countDown()
+            assertEquals(2, exporting.await())
+            deleting.await()
+        } finally {
+            writeSessions.countDown()
+            writeImage.countDown()
+        }
+
+        assertNull(store.load(session.id))
+        assertNull(attachments.file(image.id))
+        import(out.toByteArray())
+        val restored = store.load(session.id)!!
+        assertEquals(session.title, restored.title)
+        assertEquals(session.updatedAt, restored.updatedAt)
+        assertEquals(original.content, (restored.messages.single() as Message.User).content)
+        assertArrayEquals(png, attachments.file(image.id)!!.readBytes())
     }
 
     @Test

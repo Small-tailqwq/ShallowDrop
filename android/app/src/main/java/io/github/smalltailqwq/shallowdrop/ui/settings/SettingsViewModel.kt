@@ -10,6 +10,7 @@ import io.github.smalltailqwq.shallowdrop.core.contract.DownloadProgress
 import io.github.smalltailqwq.shallowdrop.core.contract.ExportLinkDownloader
 import io.github.smalltailqwq.shallowdrop.core.contract.HistoryBackup
 import io.github.smalltailqwq.shallowdrop.core.contract.HistoryException
+import io.github.smalltailqwq.shallowdrop.core.contract.ReplySaveException
 import io.github.smalltailqwq.shallowdrop.core.contract.ImportProgress
 import io.github.smalltailqwq.shallowdrop.core.contract.ImportResult
 import io.github.smalltailqwq.shallowdrop.core.contract.SettingsRepository
@@ -188,6 +189,8 @@ class SettingsViewModel(
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (_: ReplySaveException) {
+            UiText.Res(R.string.history_unsaved_reply)
         } catch (e: HistoryException) {
             Log.w(TAG, "导入失败", e)
             UiText.Res(backupErrorMessage(e.code))
@@ -217,6 +220,8 @@ class SettingsViewModel(
             UiText.Res(R.string.history_exported)
         } catch (e: CancellationException) {
             throw e
+        } catch (_: ReplySaveException) {
+            UiText.Res(R.string.history_unsaved_reply)
         } catch (e: Exception) {
             Log.w(TAG, "导出失败", e)
             UiText.Format(R.string.history_export_failed, e.message ?: e.javaClass.simpleName)

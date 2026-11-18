@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import io.github.smalltailqwq.shallowdrop.R
 import io.github.smalltailqwq.shallowdrop.core.contract.ChatRepository
 import io.github.smalltailqwq.shallowdrop.core.contract.ConversationState
+import io.github.smalltailqwq.shallowdrop.core.contract.ReplySaveException
 import io.github.smalltailqwq.shallowdrop.core.contract.SendOptions
 import io.github.smalltailqwq.shallowdrop.core.contract.SettingsRepository
 import io.github.smalltailqwq.shallowdrop.core.model.AppSettings
@@ -61,7 +62,7 @@ data class ChatUiState(
     val generating: Boolean get() = conversation?.generating == true
     val isEmpty: Boolean get() = conversation?.turns.isNullOrEmpty()
     val canSend: Boolean
-        get() = !generating &&
+        get() = !generating && conversation?.replySaveFailed != true &&
             (draft.text.isNotBlank() || draft.attachments.isNotEmpty()) &&
             draft.attachments.all { it.ready }
 }
@@ -225,6 +226,8 @@ class ChatViewModel(
         sessionId.value?.let(repository::stop)
     }
 
+    fun retrySaveReply() = launchAction { repository.retrySaveReply(it) }
+
     private fun launchAction(block: suspend (String) -> Unit) {
         val id = sessionId.value ?: return
         viewModelScope.launch {
@@ -253,6 +256,7 @@ class ChatViewModel(
 
     private fun errorText(error: Throwable, fallback: Int): UiText {
         Log.w(TAG, "操作失败", error)
+        if (error is ReplySaveException) return UiText.Res(R.string.reply_save_failed)
         if (error is ApiException) {
             errorCodeMessage(error.code)?.let { return UiText.Res(it) }
         }

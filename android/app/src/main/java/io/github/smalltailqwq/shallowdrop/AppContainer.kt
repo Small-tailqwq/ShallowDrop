@@ -29,6 +29,7 @@ import io.github.smalltailqwq.shallowdrop.domain.chat.ChatEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /** 手动依赖注入。 */
@@ -98,7 +99,10 @@ class AppContainer(context: Context) {
                 return chatEngine.replaceAll { archiveBackup.importArchive(uri, onProgress) }
             }
 
-            override suspend fun exportArchive(uri: Uri) = archiveBackup.exportArchive(uri)
+            override suspend fun exportArchive(uri: Uri) {
+                chatEngine.requireSavedReplies()
+                archiveBackup.exportArchive(uri)
+            }
 
             override val imageRestore get() = archiveBackup.imageRestore
 
@@ -112,6 +116,9 @@ class AppContainer(context: Context) {
             // 失败时状态保持 Pending：设置页提示并可重试，发送带图消息前也会再试
             runCatching { archiveBackup.retryImageRestore() }
         }
-        memoryEngine.start()
+        appScope.launch {
+            settingsRepository.loaded.first { it }
+            memoryEngine.start()
+        }
     }
 }

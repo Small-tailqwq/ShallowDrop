@@ -28,11 +28,11 @@ import io.github.smalltailqwq.shallowdrop.domain.chat.applyEvent
 import io.github.smalltailqwq.shallowdrop.domain.chat.replyText
 import java.time.ZoneId
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -45,6 +45,7 @@ import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -100,14 +101,21 @@ class MemoryEngine(
     /** 同一时间只整理一个会话，后一次整理能看到前一次的结果 */
     private val extractMutex = Mutex()
 
-    private val timers = ConcurrentHashMap<String, Job>()
+    private class Extraction(val sessionId: String, var hasNewReply: Boolean = false)
+
+    private val timers = HashMap<String, Job>()
+    private var activeExtraction: Extraction? = null
 
     private val enabled get() = settings.settings.value.memoryEnabled
 
     init {
         scope.launch {
             settings.settings.map { it.memoryEnabled }.distinctUntilChanged().collect { on ->
-                if (!on) timers.keys.toList().forEach { timers.remove(it)?.cancel() }
+                if (!on) stateMutex.withLock {
+                    timers.values.forEach { it.cancel() }
+                    timers.clear()
+                    activeExtraction = null
+                }
             }
         }
     }
@@ -116,12 +124,15 @@ class MemoryEngine(
         loading.await()
         return stateMutex.withLock {
             val next = change(state.value)
-            if (next != state.value) {
-                store.save(next)
-                state.value = next
-            }
+            saveState(next)
             next
         }
+    }
+
+    private suspend fun saveState(next: MemoryState) {
+        if (next == state.value) return
+        store.save(next)
+        state.value = next
     }
 
     // ---------- 对话流程的接入点 ----------
@@ -145,17 +156,27 @@ class MemoryEngine(
     suspend fun systemBlock(): String? {
         if (!enabled) return null
         loading.await()
-        return memorySystemBlock(state.value.entries, zone())
+        return if (enabled) memorySystemBlock(state.value.entries, zone()) else null
     }
 
-    fun onReplyFinished(sessionId: String) {
+    suspend fun onReplyFinished(sessionId: String) {
         if (!enabled) return
-        scope.launch {
-            mutate { it.copy(pending = it.pending + sessionId) }
-            timers.put(sessionId, scope.launch {
-                delay(idleMs)
-                extract(sessionId)
-            })?.cancel()
+        try {
+            loading.await()
+            stateMutex.withLock {
+                if (!enabled) return
+                val current = state.value
+                saveState(current.copy(pending = current.pending + sessionId))
+                activeExtraction?.takeIf { it.sessionId == sessionId }?.hasNewReply = true
+                timers.put(sessionId, scope.launch {
+                    delay(idleMs)
+                    extract(sessionId)
+                })?.cancel()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log("标记待整理会话失败", e)
         }
     }
 
@@ -171,12 +192,16 @@ class MemoryEngine(
 
     /** 会话被删除（null 表示全部会话被删除或整体替换）：丢弃整理进度，已有记忆保留。 */
     suspend fun forgetSessions(sessionId: String?) {
-        if (sessionId == null) {
-            timers.keys.toList().forEach { timers.remove(it)?.cancel() }
-            mutate { it.copy(cursors = emptyMap(), pending = emptySet()) }
-        } else {
-            timers.remove(sessionId)?.cancel()
-            mutate { it.copy(cursors = it.cursors - sessionId, pending = it.pending - sessionId) }
+        mutate {
+            if (sessionId == null || activeExtraction?.sessionId == sessionId) activeExtraction = null
+            if (sessionId == null) {
+                timers.values.forEach { timer -> timer.cancel() }
+                timers.clear()
+                it.copy(cursors = emptyMap(), pending = emptySet())
+            } else {
+                timers.remove(sessionId)?.cancel()
+                it.copy(cursors = it.cursors - sessionId, pending = it.pending - sessionId)
+            }
         }
     }
 
@@ -184,28 +209,43 @@ class MemoryEngine(
 
     private suspend fun extract(sessionId: String) {
         val self = currentCoroutineContext()[Job]
-        timers[sessionId]?.let { if (it !== self && timers.remove(sessionId, it)) it.cancel() }
         extractMutex.withLock {
-            if (!enabled || sessionId !in state.value.pending) return
+            val extraction = stateMutex.withLock {
+                if (!enabled || sessionId !in state.value.pending) return
+                timers.remove(sessionId)?.takeIf { it !== self }?.cancel()
+                Extraction(sessionId).also { activeExtraction = it }
+            }
             updatingState.value = true
             try {
-                extractLocked(sessionId)
-                tidy()
+                extractLocked(extraction)
+                if (stateMutex.withLock { enabled && activeExtraction === extraction }) tidy(extraction)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 // 请求失败：保留待整理标记，下次触发时重试
                 log("整理记忆失败", e)
             } finally {
+                withContext(NonCancellable) {
+                    stateMutex.withLock {
+                        if (activeExtraction === extraction) activeExtraction = null
+                    }
+                }
                 updatingState.value = false
             }
         }
     }
 
-    private suspend fun extractLocked(sessionId: String) {
+    private suspend fun mutateExtraction(extraction: Extraction, change: (MemoryState) -> MemoryState) {
+        mutate { if (enabled && activeExtraction === extraction) change(it) else it }
+    }
+
+    private suspend fun extractLocked(extraction: Extraction) {
+        val sessionId = extraction.sessionId
         val snapshot = sessions.loadConversation(sessionId)
         if (snapshot == null) {
-            mutate { it.copy(cursors = it.cursors - sessionId, pending = it.pending - sessionId) }
+            mutateExtraction(extraction) {
+                if (extraction.hasNewReply) it else it.copy(cursors = it.cursors - sessionId, pending = it.pending - sessionId)
+            }
             return
         }
         val path = snapshot.messages
@@ -225,13 +265,14 @@ class MemoryEngine(
         }.takeLast(MAX_TURNS).dropWhile { !it.fromUser }
         val cursor = fresh.lastOrNull()?.id
         fun done(current: MemoryState) = current.copy(
-            pending = current.pending - sessionId,
+            pending = if (extraction.hasNewReply) current.pending else current.pending - sessionId,
             cursors = if (cursor == null) current.cursors else current.cursors + (sessionId to cursor),
         )
         if (turns.none { it.fromUser }) {
-            mutate(::done)
+            mutateExtraction(extraction, ::done)
             return
         }
+        if (!stateMutex.withLock { enabled && activeExtraction === extraction }) return
         val shown = state.value.entries
         val today = memoryDate(clock(), zone())
         val ops = parseMemoryOps(request(MEMORY_EXTRACT_PROMPT, listOf(memoryExtractionInput(shown, turns, today, zone()))))
@@ -241,10 +282,10 @@ class MemoryEngine(
             return cited.distinct().map { MemoryQuote(it.text.take(MEMORY_QUOTE_TEXT_LIMIT), it.at, sessionId, it.messageId, snapshot.title) }
         }
         val now = clock()
-        mutate { current ->
-            if (ops.isNullOrEmpty()) return@mutate done(current)
+        mutateExtraction(extraction) { current ->
+            if (ops.isNullOrEmpty()) return@mutateExtraction done(current)
             val update = applyMemoryOps(current.entries, ops, now, idGenerator, ::quotes, shown = shown.map { it.id })
-            if (update.changes.isEmpty()) return@mutate done(current)
+            if (update.changes.isEmpty()) return@mutateExtraction done(current)
             val record = MemoryRecord(
                 idGenerator(), now, MemoryOrigin.Conversation, update.changes,
                 ops.flatMap(::quotes).distinct(), sessionId, snapshot.title,
@@ -274,18 +315,18 @@ class MemoryEngine(
      * 整理完一段对话后控制篇幅：先清理过期的安排；总字数超过 [MEMORY_TIDY_AT] 时请模型合并一次。
      * 合并没能压到阈值以下时，要再增长 [MEMORY_TIDY_STEP] 才重试。请求失败时下次整理再试。
      */
-    private suspend fun tidy() {
+    private suspend fun tidy(extraction: Extraction) {
         expire()
         val shown = state.value.entries
         val size = memorySize(shown)
         if (size <= MEMORY_TIDY_AT) {
-            if (state.value.tidiedAt != 0) mutate { it.copy(tidiedAt = 0) }
+            if (state.value.tidiedAt != 0) mutateExtraction(extraction) { it.copy(tidiedAt = 0) }
             return
         }
         if (size < state.value.tidiedAt + MEMORY_TIDY_STEP) return
         val ops = parseMemoryOps(request(MEMORY_TIDY_PROMPT, listOf(memoryTidyInput(shown, memoryDate(clock(), zone()), zone()))))
         val now = clock()
-        mutate { current ->
+        mutateExtraction(extraction) { current ->
             val update = applyMemoryTidy(current.entries, ops.orEmpty(), shown)
             val next = current.copy(entries = update.entries, tidiedAt = memorySize(update.entries))
             if (update.changes.isEmpty()) next else next.withRecord(MemoryOrigin.Tidy, update.changes, now)
@@ -357,7 +398,12 @@ class MemoryEngine(
 
     /** 清空后保留整理进度，旧对话不会被重新整理成记忆。 */
     override suspend fun clear() {
-        mutate { MemoryState(cursors = it.cursors) }
+        mutate {
+            activeExtraction = null
+            timers.values.forEach { timer -> timer.cancel() }
+            timers.clear()
+            MemoryState(cursors = it.cursors)
+        }
     }
 
     override suspend fun ask(question: String, previous: List<MemoryExchange>): MemoryExchange {

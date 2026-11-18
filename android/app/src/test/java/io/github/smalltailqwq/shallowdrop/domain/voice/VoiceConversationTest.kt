@@ -37,8 +37,10 @@ class VoiceConversationTest {
         val sent = mutableListOf<Pair<String, SendOptions>>()
         val stopped = mutableListOf<String>()
         val conversation = MutableStateFlow<ConversationState?>(null)
+        var retryResult = true
+        var saveRetries = 0
 
-        fun emit(text: String, status: ReplyStatus) {
+        fun emit(text: String, status: ReplyStatus, replySaveFailed: Boolean = false) {
             val reply = Message.Assistant(
                 id = "a${sent.size}",
                 createdAt = 0,
@@ -49,6 +51,7 @@ class VoiceConversationTest {
                 session = SessionSummary("s1", "", 0, 0),
                 turns = listOf(TurnView(Message.User("u${sent.size}", 0, content = sent.last().first), 0, 1), TurnView(reply, 0, 1)),
                 generating = status == ReplyStatus.Pending || status == ReplyStatus.Streaming,
+                replySaveFailed = replySaveFailed,
             )
         }
 
@@ -59,6 +62,11 @@ class VoiceConversationTest {
         }
 
         override fun observeConversation(sessionId: String): Flow<ConversationState?> = conversation
+
+        override suspend fun retrySaveReply(sessionId: String): Boolean {
+            saveRetries++
+            return retryResult
+        }
 
         override fun stop(sessionId: String) {
             stopped += sessionId
@@ -318,5 +326,30 @@ class VoiceConversationTest {
         assertEquals(VoiceProblem.ReplyFailed, voice.state.value.problem)
         assertEquals(VoicePhase.Listening, voice.state.value.phase)
         assertTrue(output.spoken.isEmpty())
+    }
+
+    @Test
+    fun replySaveFailurePausesVoiceUntilRetrySucceeds() = voiceTest { voice ->
+        say(final = "你好")
+        voice.start()
+        advanceUntilIdle()
+        chat.emit("你好！", ReplyStatus.Done, replySaveFailed = true)
+        advanceUntilIdle()
+        assertEquals(VoiceProblem.ReplySaveFailed, voice.state.value.problem)
+        assertEquals(VoicePhase.Stopped, voice.state.value.phase)
+        assertEquals(listOf("你好！"), output.spoken)
+
+        chat.retryResult = false
+        voice.interrupt()
+        advanceUntilIdle()
+        assertEquals(VoicePhase.Stopped, voice.state.value.phase)
+        assertEquals(1, input.listens)
+
+        chat.retryResult = true
+        voice.interrupt()
+        advanceUntilIdle()
+        assertEquals(VoicePhase.Listening, voice.state.value.phase)
+        assertEquals(2, chat.saveRetries)
+        assertEquals(1, chat.sent.size)
     }
 }

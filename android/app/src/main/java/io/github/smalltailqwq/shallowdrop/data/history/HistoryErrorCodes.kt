@@ -42,9 +42,6 @@ object HistoryErrorCodes {
     /** 历史记录超出归档大小或 ZIP32 条目限制，无法导出 */
     const val EXPORT_TOO_LARGE = "backupExportTooLarge"
 
-    /** 导出期间会话被删除，请重试 */
-    const val EXPORT_SESSION_MISSING = "backupExportSessionMissing"
-
     /** 不是有效的下载链接 */
     const val LINK_INVALID = "backupLinkInvalid"
 
@@ -66,7 +63,6 @@ object HistoryErrorCodes {
         WRITE_FAILED to "无法写入所选位置",
         STORAGE_FAILED to "本地存储失败，原有数据未改变",
         EXPORT_TOO_LARGE to "历史记录过大，无法导出",
-        EXPORT_SESSION_MISSING to "导出期间会话被删除，请重试",
         LINK_INVALID to "不是有效的下载链接",
         LINK_EXPIRED to "下载链接已失效",
         DOWNLOAD_FAILED to "下载失败",

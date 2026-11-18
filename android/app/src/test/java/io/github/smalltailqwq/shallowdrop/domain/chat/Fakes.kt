@@ -79,13 +79,13 @@ class FakeSessionStore : SessionStore {
         data.update { it + (session.id to session) }
     }
 
-    override suspend fun upsertMessage(sessionId: String, message: Message, updatedAt: Long, rootMessageId: String?) {
-        upserts++
+    override suspend fun upsertMessages(sessionId: String, messages: List<Message>, updatedAt: Long, rootMessageId: String?) {
+        upserts += messages.size
         data.update { map ->
             val session = map[sessionId] ?: return@update map
-            val exists = session.messages.any { it.id == message.id }
-            val messages = if (exists) session.messages.map { if (it.id == message.id) message else it } else session.messages + message
-            map + (sessionId to session.copy(messages = messages, updatedAt = updatedAt, rootMessageId = rootMessageId))
+            val updated = session.messages.associateByTo(LinkedHashMap()) { it.id }
+            messages.forEach { updated[it.id] = it }
+            map + (sessionId to session.copy(messages = updated.values.toList(), updatedAt = updatedAt, rootMessageId = rootMessageId))
         }
     }
 

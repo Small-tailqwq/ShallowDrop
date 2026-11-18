@@ -167,6 +167,9 @@
     <string name="history_import_failed">File import failed. The file format may be invalid, or the ZIP file may use an older chat export format. Please export your chat history from DeepSeek again and retry the import.</string>
     <string name="history_imported_images_pending">Chats imported, but images are not restored yet. Retry in Settings → Data, or restart the app.</string>
     <string name="retry">Retry</string>
+    <string name="reply_save_failed">Could not save the reply.</string>
+    <string name="retry_save_reply">Retry saving</string>
+    <string name="history_unsaved_reply">Open the conversation and retry saving the reply before continuing.</string>
     <string name="images_restore_pending">Imported images not restored</string>
     <string name="images_restored">Images restored</string>
     <string name="images_restore_failed">Could not restore images. Free up storage and retry.</string>

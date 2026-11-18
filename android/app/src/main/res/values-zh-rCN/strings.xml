@@ -156,6 +156,9 @@
     <string name="history_import_failed">文件导入失败，可能是文件格式错误或使用了旧版的对话导出 ZIP 文件，请前往 DeepSeek 重新导出历史对话文件后再次导入。</string>
     <string name="history_imported_images_pending">对话已导入，但图片尚未恢复完成。请在「设置 → 数据」中重试，或重启应用。</string>
     <string name="retry">重试</string>
+    <string name="reply_save_failed">回复保存失败。</string>
+    <string name="retry_save_reply">重试保存</string>
+    <string name="history_unsaved_reply">请先打开相应的对话，重试保存回复。</string>
     <string name="images_restore_pending">导入的图片尚未恢复</string>
     <string name="images_restored">图片已恢复</string>
     <string name="images_restore_failed">图片恢复失败，请清理存储空间后重试。</string>

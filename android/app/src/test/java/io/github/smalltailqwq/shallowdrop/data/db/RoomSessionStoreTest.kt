@@ -74,8 +74,26 @@ class RoomSessionStoreTest {
             contextSummaryId = "previous-prefix-sha256",
         )
         store.save(original)
-        store.upsertMessage("s1", reply, 100, original.rootMessageId)
+        store.upsertMessages("s1", listOf(reply), 100, original.rootMessageId)
         assertEquals(reply, store.load("s1")!!.messages.last())
+    }
+
+    @Test
+    fun writingATurnRollsBackItsMessagesAndBranchWhenTheReplyInsertFails() = runTest {
+        val original = session("s1", 100)
+        store.save(original)
+        env.db.openHelper.writableDatabase.execSQL(
+            "CREATE TRIGGER reject_reply BEFORE INSERT ON messages WHEN NEW.id = 'a2' " +
+                "BEGIN SELECT RAISE(ABORT, 'test write failure'); END",
+        )
+        val previous = (original.messages.last() as Message.Assistant).copy(selectedChildId = "u2")
+        val question = Message.User("u2", 110, parentId = "a1", selectedChildId = "a2", content = "继续", files = listOf(image))
+        val reply = Message.Assistant("a2", 111, parentId = "u2", status = ReplyStatus.Pending)
+
+        val failure = runCatching { store.upsertMessages("s1", listOf(previous, question, reply), 111, "u1") }
+        assertTrue(failure.isFailure)
+        assertEquals(original, store.load("s1"))
+        assertTrue(env.db.chatDao().referencesOf(image.id).isEmpty())
     }
 
     @Test
@@ -102,7 +120,7 @@ class RoomSessionStoreTest {
         assertNull(store.loadConversation("s1", "missing"))
         assertNull(store.loadConversation("missing"))
 
-        store.upsertMessage("s1", question.copy(selectedChildId = "a1"), 101, "u1")
+        store.upsertMessages("s1", listOf(question.copy(selectedChildId = "a1")), 101, "u1")
         assertEquals(older.messages, store.loadConversation("s1")!!.messages)
         assertEquals(listOf(image), (older.messages.first() as Message.User).files)
     }
@@ -207,15 +225,15 @@ class RoomSessionStoreTest {
     fun upsertMessageKeepsOrderAndTouchesSession() = runTest {
         store.save(session("s1", 100))
         val reply = Message.Assistant(id = "a2", createdAt = 5, parentId = "u1", status = ReplyStatus.Streaming)
-        store.upsertMessage("s1", reply, updatedAt = 300, rootMessageId = "u1")
+        store.upsertMessages("s1", listOf(reply), updatedAt = 300, rootMessageId = "u1")
         // 覆盖已有消息不改变顺序
-        store.upsertMessage("s1", reply.copy(status = ReplyStatus.Done), updatedAt = 400, rootMessageId = "u1")
+        store.upsertMessages("s1", listOf(reply.copy(status = ReplyStatus.Done)), updatedAt = 400, rootMessageId = "u1")
         val loaded = store.load("s1")!!
         assertEquals(listOf("u1", "a1", "a2"), loaded.messages.map { it.id })
         assertEquals(ReplyStatus.Done, (loaded.messages[2] as Message.Assistant).status)
         assertEquals(400, loaded.updatedAt)
         // 会话不存在时忽略
-        store.upsertMessage("nope", reply, 1, null)
+        store.upsertMessages("nope", listOf(reply), 1, null)
         assertNull(store.load("nope"))
     }
 

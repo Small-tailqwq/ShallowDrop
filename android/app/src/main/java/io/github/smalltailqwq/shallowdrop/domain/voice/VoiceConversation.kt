@@ -1,6 +1,7 @@
 package io.github.smalltailqwq.shallowdrop.domain.voice
 
 import io.github.smalltailqwq.shallowdrop.core.contract.ChatRepository
+import io.github.smalltailqwq.shallowdrop.core.contract.ReplySaveException
 import io.github.smalltailqwq.shallowdrop.core.contract.SendOptions
 import io.github.smalltailqwq.shallowdrop.core.model.Message
 import io.github.smalltailqwq.shallowdrop.core.model.ReplyBlock
@@ -39,6 +40,8 @@ enum class VoiceProblem {
 
     /** 这一轮回复失败（如 API 报错），继续聆听 */
     ReplyFailed,
+
+    ReplySaveFailed,
 
     /** 语音服务拒绝请求（API Key 无效、余额不足等） */
     ServiceRejected,
@@ -100,6 +103,8 @@ class VoiceConversation(
         fatal = null
         stateFlow.update { it.copy(phase = VoicePhase.Preparing, problem = null) }
         loop = scope.launch {
+            val sessionId = stateFlow.value.sessionId
+            if (sessionId != null && !chat.retrySaveReply(sessionId)) return@launch stopWith(VoiceProblem.ReplySaveFailed)
             if (!input.isAvailable()) return@launch stopWith(VoiceProblem.NoRecognizer)
             if (!output.prepare(languageTag())) return@launch stopWith(VoiceProblem.NoSynthesizer)
             while (isActive) {
@@ -164,6 +169,9 @@ class VoiceConversation(
             chat.send(stateFlow.value.sessionId, question, emptyList(), options().copy(voice = true))
         } catch (e: CancellationException) {
             throw e
+        } catch (_: ReplySaveException) {
+            fatal = VoiceProblem.ReplySaveFailed
+            return
         } catch (_: Exception) {
             stateFlow.update { it.copy(problem = VoiceProblem.ReplyFailed) }
             delay(RETRY_DELAY_MS)
@@ -274,7 +282,12 @@ class VoiceConversation(
             if (settled && reply.status == ReplyStatus.Error && spoken.isEmpty()) {
                 stateFlow.update { it.copy(problem = VoiceProblem.ReplyFailed) }
             }
-            settled
+            if (settled && !conversation.generating) {
+                if (conversation.replySaveFailed) fatal = VoiceProblem.ReplySaveFailed
+                true
+            } else {
+                false
+            }
         }
     }
 

@@ -27,6 +27,7 @@ import io.github.smalltailqwq.shallowdrop.domain.chat.FakeSessionStore
 import io.github.smalltailqwq.shallowdrop.domain.chat.FakeSettings
 import io.github.smalltailqwq.shallowdrop.domain.chat.textReply
 import java.time.ZoneOffset
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -98,6 +99,55 @@ class MemoryEngineTest {
         (messages.last() as MessageParam.User).content.filterIsInstance<UserContentParam.Text>().joinToString("") { it.text }
 
     private fun reply(json: String) = { _: CreateMessageRequest -> textReply(json) }
+
+    @Test
+    fun replyFinishedDuringExtractionRemainsPendingForTheNextPass() = engineTest { engine, _ ->
+        val finishExtraction = CompletableDeferred<Unit>()
+        conversation("s", "第一问", "第一答")
+        api.scripts += { flow {
+            finishExtraction.await()
+            textReply("""{"ops":[]}""").collect { emit(it) }
+        } }
+        api.scripts += reply("""{"ops":[]}""")
+        engine.onReplyFinished("s")
+        advanceTimeBy(1000)
+        runCurrent()
+        assertEquals(1, api.requests.size)
+
+        conversation("s", "第一问", "第一答", "第二问", "第二答")
+        engine.onReplyFinished("s")
+        finishExtraction.complete(Unit)
+        runCurrent()
+        assertEquals(setOf("s"), store.saved.pending)
+        assertEquals("s-1", store.saved.cursors["s"])
+
+        advanceUntilIdle()
+        assertEquals(2, api.requests.size)
+        assertTrue("第二问" in api.requests.last().userText())
+        assertFalse("第一问" in api.requests.last().userText())
+        assertTrue(store.saved.pending.isEmpty())
+        assertEquals("s-3", store.saved.cursors["s"])
+    }
+
+    @Test
+    fun forgettingAConversationDiscardsItsInFlightExtraction() = engineTest { engine, _ ->
+        val finishExtraction = CompletableDeferred<Unit>()
+        conversation("s", "我喜欢喝茶", "好的")
+        api.scripts += { flow {
+            finishExtraction.await()
+            textReply("""{"ops":[{"op":"add","text":"用户喜欢喝茶","from":[1]}]}""").collect { emit(it) }
+        } }
+        engine.onReplyFinished("s")
+        advanceTimeBy(1000)
+        runCurrent()
+        assertEquals(1, api.requests.size)
+
+        sessions.delete("s")
+        engine.forgetSessions("s")
+        finishExtraction.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(MemoryState(), store.saved)
+    }
 
     @Test
     fun extractsAfterIdleAndKeepsTheQuote() = engineTest { engine, _ ->

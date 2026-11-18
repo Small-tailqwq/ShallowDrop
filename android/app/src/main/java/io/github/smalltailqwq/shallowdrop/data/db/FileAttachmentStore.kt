@@ -15,6 +15,7 @@ import java.io.InputStream
 import java.util.UUID
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -60,8 +61,10 @@ class FileAttachmentStore(
     }
 
     override suspend fun put(attachment: FileAttachment, content: InputStream) {
-        withContext(io) { writeOriginal(attachment.id, content) }
-        dao.upsertFile(attachment.toEntity())
+        db.historyLock.withLock {
+            withContext(io) { writeOriginal(attachment.id, content) }
+            dao.upsertFile(attachment.toEntity())
+        }
     }
 
     override fun file(attachmentId: String): File? = paths.file(attachmentId).takeIf { it.isFile }

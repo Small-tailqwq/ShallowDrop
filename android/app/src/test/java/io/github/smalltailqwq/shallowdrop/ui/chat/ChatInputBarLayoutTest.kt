@@ -2,7 +2,7 @@ package io.github.smalltailqwq.shallowdrop.ui.chat
 
 import android.graphics.Bitmap
 import android.graphics.Color
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
@@ -18,6 +18,8 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -48,7 +50,10 @@ class ChatInputBarLayoutTest {
         compose.setContent {
             ShallowDropTheme {
                 Surface {
-                    Box(Modifier.width(width)) {
+                    Column(Modifier.width(width)) {
+                        if (state.conversation?.replySaveFailed == true) {
+                            ReplySaveNotice(enabled = !state.generating, onRetry = { actions += "retrySave" })
+                        }
                         ChatInputBar(
                             state = state,
                             onTextChange = {},
@@ -118,6 +123,19 @@ class ChatInputBarLayoutTest {
         compose.onNodeWithContentDescription("上传文件").performTouchInput { click(Offset(centerX, insideTopEdge)) }
         compose.onNodeWithText("图片").assertIsDisplayed()
         compose.onNodeWithText("文件").assertIsDisplayed()
+    }
+
+    @Test fun saveFailureShowsRetryAndKeepsDraftFromSending() {
+        val conversation = ConversationState(SessionSummary("s", "", 0, 0), emptyList(), generating = false, replySaveFailed = true)
+        show(ChatUiState(sessionId = "s", conversation = conversation, draft = Draft("下一问")))
+
+        compose.onNodeWithText("回复保存失败。").assertIsDisplayed()
+        compose.onNodeWithContentDescription("发送").assertIsNotEnabled()
+        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+        val output = File("build/ui-review-input").apply { mkdirs() }
+        File(output, "save-failed.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        compose.onNodeWithText("重试保存").performClick()
+        compose.runOnIdle { assertEquals(listOf("retrySave"), actions) }
     }
 
     @Test fun multilineDraftKeepsSendAlignedAndTappable() {

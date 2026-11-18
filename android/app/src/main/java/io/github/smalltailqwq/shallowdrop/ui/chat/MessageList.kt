@@ -93,7 +93,7 @@ fun MessageList(
     onSearchTargetHandled: (SearchTarget) -> Unit = {},
 ) {
     val turns = conversation.turns
-    val busy = conversation.generating
+    val busy = conversation.generating || conversation.replySaveFailed
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var highlight by remember(conversation.session.id) { mutableStateOf<SearchHighlightState?>(null) }
     val target = searchTarget?.takeIf { it.sessionId == conversation.session.id }
@@ -167,7 +167,7 @@ fun MessageList(
                         is Message.Assistant -> AssistantMessage(
                             turn = turn,
                             isLast = index == turns.lastIndex,
-                            streaming = busy && index == turns.lastIndex,
+                            streaming = conversation.generating && index == turns.lastIndex,
                             busy = busy,
                             swipeSettings = replySwipe,
                             reading = readingId == message.id,

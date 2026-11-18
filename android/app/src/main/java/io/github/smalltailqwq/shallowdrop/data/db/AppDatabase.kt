@@ -29,8 +29,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun stagingDao(): StagingDao
 
     /**
-     * 导入、导出与全部删除串行执行，避免读取归档时数据被清空或两次替换交错（对应 Web backup.ts 的队列）。
-     * ArchiveHistoryBackup 与 RoomSessionStore.deleteAll 共用。
+     * 串行处理备份和对现有附件原件的替换、删除，直到导出所引用的图片全部写入。
      */
     val historyLock = Mutex()
 

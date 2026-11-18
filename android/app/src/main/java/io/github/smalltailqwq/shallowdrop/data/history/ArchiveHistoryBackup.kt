@@ -27,7 +27,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * 历史导入导出，格式见 src/services/chat/history/README.md（export_format_version 3）。
- * 导入、导出与 RoomSessionStore.deleteAll 经 AppDatabase.historyLock 串行执行。
+ * 导入、导出和会修改已有图片原件的操作经 AppDatabase.historyLock 串行执行。
  * 失败抛 HistoryException，code 见 HistoryErrorCodes。
  */
 class ArchiveHistoryBackup(

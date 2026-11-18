@@ -50,6 +50,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
@@ -73,6 +74,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
@@ -355,6 +358,9 @@ private fun ChatContent(
                     }
                 }
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (conversation?.replySaveFailed == true) {
+                        ReplySaveNotice(enabled = !state.generating, onRetry = viewModel::retrySaveReply)
+                    }
                     ChatInputBar(
                         state = state,
                         onTextChange = viewModel::onTextChange,
@@ -388,6 +394,24 @@ private fun ChatContent(
 
     sheetSources?.let { (sources, title) ->
         SourcesSheet(sources, title = title, onDismiss = { sheetSources = null })
+    }
+}
+
+@Composable
+internal fun ReplySaveNotice(enabled: Boolean, onRetry: () -> Unit) {
+    Row(
+        Modifier.widthIn(max = 760.dp).fillMaxWidth().padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.reply_save_failed),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
+        )
+        TextButton(onClick = onRetry, enabled = enabled) {
+            Text(stringResource(R.string.retry_save_reply))
+        }
     }
 }
 

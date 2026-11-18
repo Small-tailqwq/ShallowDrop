@@ -63,15 +63,17 @@ class RoomSessionStore(
     }
 
     /** 会话不存在（例如生成过程中被删除）时忽略，不再写入孤立消息。 */
-    override suspend fun upsertMessage(sessionId: String, message: Message, updatedAt: Long, rootMessageId: String?) {
+    override suspend fun upsertMessages(sessionId: String, messages: List<Message>, updatedAt: Long, rootMessageId: String?) {
         db.withTransaction {
             if (dao.touchSession(sessionId, updatedAt, rootMessageId) == 0) {
                 return@withTransaction
             }
-            val seq = dao.messageSeq(sessionId, message.id) ?: ((dao.maxSeq(sessionId) ?: -1) + 1)
-            dao.upsertMessages(listOf(message.toEntity(sessionId, seq)))
-            dao.deleteMessageFilesOf(sessionId, message.id)
-            writeReferences(sessionId, listOf(message))
+            for (message in messages) {
+                val seq = dao.messageSeq(sessionId, message.id) ?: ((dao.maxSeq(sessionId) ?: -1) + 1)
+                dao.upsertMessages(listOf(message.toEntity(sessionId, seq)))
+                dao.deleteMessageFilesOf(sessionId, message.id)
+            }
+            writeReferences(sessionId, messages)
         }
     }
 
@@ -80,14 +82,16 @@ class RoomSessionStore(
     }
 
     override suspend fun delete(sessionId: String) {
-        val orphaned = db.withTransaction {
-            val fileIds = dao.fileIdsOf(sessionId)
-            dao.deleteSession(sessionId)
-            dao.deleteMessages(sessionId)
-            dao.deleteMessageFilesOf(sessionId)
-            fileIds.filter { dao.referenceCount(it) == 0 }.onEach { dao.deleteFile(it) }
+        db.historyLock.withLock {
+            val orphaned = db.withTransaction {
+                val fileIds = dao.fileIdsOf(sessionId)
+                dao.deleteSession(sessionId)
+                dao.deleteMessages(sessionId)
+                dao.deleteMessageFilesOf(sessionId)
+                fileIds.filter { dao.referenceCount(it) == 0 }.onEach { dao.deleteFile(it) }
+            }
+            withContext(io) { orphaned.forEach { paths.file(it).delete() } }
         }
-        withContext(io) { orphaned.forEach { paths.file(it).delete() } }
     }
 
     override suspend fun searchMessages(query: String): List<MessageMatch> {

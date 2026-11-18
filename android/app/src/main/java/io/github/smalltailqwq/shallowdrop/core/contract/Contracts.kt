@@ -63,8 +63,8 @@ interface SessionStore {
     /** 写入会话元数据与全部消息（新建或整体覆盖） */
     suspend fun save(session: Session)
 
-    /** 新增或覆盖单条消息，同时更新会话 updatedAt 与 rootMessageId */
-    suspend fun upsertMessage(sessionId: String, message: Message, updatedAt: Long, rootMessageId: String?)
+    /** 在同一次提交中写入消息及其分支指针，并更新会话元数据。 */
+    suspend fun upsertMessages(sessionId: String, messages: List<Message>, updatedAt: Long, rootMessageId: String?)
 
     suspend fun rename(sessionId: String, title: String)
 
@@ -235,7 +235,10 @@ data class ConversationState(
     val session: SessionSummary,
     val turns: List<TurnView>,
     val generating: Boolean,
+    val replySaveFailed: Boolean = false,
 )
+
+class ReplySaveException : IllegalStateException("A reply has not been saved")
 
 data class SendOptions(
     val thinking: Boolean,
@@ -255,6 +258,9 @@ interface ChatRepository {
     suspend fun send(sessionId: String?, text: String, files: List<FileAttachment>, options: SendOptions): String
 
     fun stop(sessionId: String)
+
+    /** 重试保存已生成的回复，返回当前是否没有待保存回复。 */
+    suspend fun retrySaveReply(sessionId: String): Boolean = true
 
     suspend fun regenerate(sessionId: String, assistantMessageId: String, options: SendOptions)
 

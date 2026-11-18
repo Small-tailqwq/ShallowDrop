@@ -2,6 +2,7 @@ package io.github.smalltailqwq.shallowdrop.domain.chat
 
 import io.github.smalltailqwq.shallowdrop.core.contract.ConversationState
 import io.github.smalltailqwq.shallowdrop.core.contract.ChatApi
+import io.github.smalltailqwq.shallowdrop.core.contract.ReplySaveException
 import io.github.smalltailqwq.shallowdrop.core.contract.SendOptions
 import io.github.smalltailqwq.shallowdrop.core.contract.SessionStore
 import io.github.smalltailqwq.shallowdrop.core.model.ApiException
@@ -79,11 +80,15 @@ class ChatEngineTest {
      * 引擎的应用作用域用测试作用域的前台子作用域：advanceUntilIdle 不会推进 backgroundScope 中的任务。
      * 测试结束时取消，避免挂起的生成拖住 runTest。
      */
-    private fun engineTest(block: suspend TestScope.(ChatEngine) -> Unit) = runTest {
+    private fun engineTest(
+        sessionStore: SessionStore = store,
+        onReplyFinished: suspend (String) -> Unit = {},
+        block: suspend TestScope.(ChatEngine) -> Unit,
+    ) = runTest {
         val scope = CoroutineScope(coroutineContext + SupervisorJob(coroutineContext.job))
         val engine = ChatEngine(
             api = api,
-            store = store,
+            store = sessionStore,
             attachments = attachments,
             settings = settings,
             resolveLocation = { preference, locale -> locate(preference, locale) },
@@ -92,6 +97,7 @@ class ChatEngineTest {
             idGenerator = { "id${ids++}" },
             zone = { ZoneOffset.UTC },
             systemLocale = { Locale.CHINA },
+            onReplyFinished = onReplyFinished,
         )
         try {
             block(engine)
@@ -109,6 +115,89 @@ class ChatEngineTest {
     private fun Message.Assistant.text() = replyText(this)
 
     private fun MessageParam.User.text() = content.filterIsInstance<UserContentParam.Text>().joinToString("") { it.text }
+
+    @Test
+    fun completedReplyCanBeSavedAgainWithoutAnotherRequest() = retryFinalSave(stop = false)
+
+    @Test
+    fun stoppedReplyCanBeSavedAgainWithoutAnotherRequest() = retryFinalSave(stop = true)
+
+    private fun retryFinalSave(stop: Boolean) {
+        val status = if (stop) ReplyStatus.Stopped else ReplyStatus.Done
+        var failWrites = true
+        val finished = ArrayList<String>()
+        val failingStore = object : SessionStore by store {
+            override suspend fun upsertMessages(sessionId: String, messages: List<Message>, updatedAt: Long, rootMessageId: String?) {
+                if (failWrites && messages.any { it is Message.Assistant && it.status == status }) error("test write failure")
+                store.upsertMessages(sessionId, messages, updatedAt, rootMessageId)
+            }
+        }
+        engineTest(failingStore, { finished += it }) { engine ->
+            if (stop) {
+                api.scripts += { flow {
+                    emit(messageStart())
+                    emit(textStart(0, "本轮回复"))
+                    awaitCancellation()
+                } }
+            } else {
+                api.scripts += { textReply("本轮回复") }
+            }
+            val id = engine.send(null, "问题", emptyList(), options)
+            runCurrent()
+            if (stop) engine.stop(id)
+            advanceUntilIdle()
+
+            val failed = engine.state(id)
+            assertFalse(failed.generating)
+            assertTrue(failed.replySaveFailed)
+            val cached = failed.turns.last().message as Message.Assistant
+            assertEquals(status, cached.status)
+            assertEquals("本轮回复", cached.text())
+            assertTrue(status != lastReply(id).status)
+            assertTrue(finished.isEmpty())
+            assertTrue(runCatching { engine.requireSavedReplies() }.exceptionOrNull() is ReplySaveException)
+            assertTrue(runCatching { engine.send(id, "继续", emptyList(), options) }.exceptionOrNull() is ReplySaveException)
+            assertFalse(engine.retrySaveReply(id))
+            assertTrue(engine.state(id).replySaveFailed)
+
+            failWrites = false
+            assertTrue(engine.retrySaveReply(id))
+            assertFalse(engine.state(id).replySaveFailed)
+            assertEquals(cached, lastReply(id))
+            assertEquals(listOf(id), finished)
+            assertEquals(1, api.requests.size)
+            engine.requireSavedReplies()
+        }
+    }
+
+    @Test
+    fun failedTurnWriteDoesNotPublishTheUncommittedPath() {
+        var rejectWrite = false
+        val failingStore = object : SessionStore by store {
+            override suspend fun upsertMessages(sessionId: String, messages: List<Message>, updatedAt: Long, rootMessageId: String?) {
+                if (rejectWrite) error("test write failure")
+                store.upsertMessages(sessionId, messages, updatedAt, rootMessageId)
+            }
+        }
+        engineTest(failingStore) { engine ->
+            val id = engine.send(null, "第一问", emptyList(), options)
+            advanceUntilIdle()
+            var latest: ConversationState? = null
+            backgroundScope.launch { engine.observeConversation(id).collect { latest = it } }
+            runCurrent()
+            val before = latest
+            rejectWrite = true
+            assertTrue(runCatching { engine.send(id, "写入失败", emptyList(), options) }.isFailure)
+            runCurrent()
+            assertEquals(before, latest)
+            assertEquals(1, api.requests.size)
+
+            rejectWrite = false
+            engine.send(id, "重试", emptyList(), options)
+            advanceUntilIdle()
+            assertEquals(listOf("第一问", "重试"), visibleMessages(stored(id)).filterIsInstance<Message.User>().map { it.content })
+        }
+    }
 
     @Test
     fun renamingWhileAnotherBranchLoadsKeepsTheNewTitle() = renameWhileLoading(switchBranch = true)
