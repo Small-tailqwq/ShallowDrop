@@ -1,5 +1,6 @@
 package io.github.smalltailqwq.shallowdrop.ui.chat.reply
 
+import io.github.smalltailqwq.shallowdrop.core.isWebUrl
 import io.github.smalltailqwq.shallowdrop.core.model.Message
 import io.github.smalltailqwq.shallowdrop.core.model.ReplyBlock
 import io.github.smalltailqwq.shallowdrop.core.model.ServerToolInput
@@ -29,6 +30,7 @@ data class Source(
 
 enum class ToolStatus { Wip, Done, Failed }
 
+/** url 为空表示没有可打开的网页链接 */
 data class PageItem(val id: String, val url: String, val title: String, val status: ToolStatus)
 
 data class FindItem(val id: String, val pattern: String, val status: ToolStatus)
@@ -74,7 +76,7 @@ fun siteNameOf(url: String): String = try {
     ""
 }
 
-/** 来源登记：同一 URL 只编号一次，编号按首次出现顺序。 */
+/** 来源登记：同一 URL 只编号一次，编号按首次出现顺序；非 HTTP / HTTPS 链接不登记。 */
 private class SourceRegistry {
     private class Entry(
         val url: String,
@@ -97,7 +99,8 @@ private class SourceRegistry {
         snippet: String? = null,
         siteIcon: String? = null,
         siteName: String? = null,
-    ): Int {
+    ): Int? {
+        if (!isWebUrl(url)) return null
         val domain = siteNameOf(url)
         val name = siteName?.trim().takeUnless { it.isNullOrEmpty() } ?: domain
         val cleanSnippet = snippet?.trim().takeUnless { it.isNullOrEmpty() }
@@ -130,7 +133,7 @@ private fun joinTextBlocks(blocks: List<PendingText>, registry: SourceRegistry):
         text.append(block.text)
         val indexes = LinkedHashSet<Int>()
         for (citation in block.citations) {
-            indexes += registry.add(citation.url, citation.title, null)
+            registry.add(citation.url, citation.title, null)?.let { indexes += it }
         }
         val body = if (indexes.isNotEmpty()) block.text.trimEnd() else block.text
         markdown.append(body)
@@ -171,7 +174,7 @@ fun buildReplyView(reply: Message.Assistant, streaming: Boolean): ReplyView {
         if (block !is ReplyBlock.ServerToolUse) continue
         when (val result = results[block.id]) {
             is ReplyBlock.WebSearchToolResult -> for (item in result.results) {
-                searchResultIndexes += registry.add(item.url, item.title, item.pageAge, item.snippet, item.siteIcon, item.siteName)
+                registry.add(item.url, item.title, item.pageAge, item.snippet, item.siteIcon, item.siteName)?.let { searchResultIndexes += it }
             }
             is ReplyBlock.WebFetchToolResult -> {
                 val url = result.url
@@ -274,7 +277,7 @@ private fun handleToolUse(
 
     if (input is ServerToolInput.Search) {
         val queries = input.queries.ifEmpty { listOfNotNull(input.query) }
-        val found = (result as? ReplyBlock.WebSearchToolResult)?.results?.map {
+        val found = (result as? ReplyBlock.WebSearchToolResult)?.results?.mapNotNull {
             registry.add(it.url, it.title, it.pageAge, it.snippet, it.siteIcon, it.siteName)
         }.orEmpty()
         // 普通搜索按种类聚合到首次出现的位置；边想边搜只合并相邻、同种类的调用
@@ -300,9 +303,10 @@ private fun handleToolUse(
         is ServerToolInput.FindInPage -> input.url
         is ServerToolInput.ReadLink -> input.url
     }
+    val url = inputUrl.ifEmpty { fetchedOk?.url.orEmpty() }
     val page = PageItem(
         id = block.id,
-        url = inputUrl.ifEmpty { fetchedOk?.url.orEmpty() },
+        url = url.takeIf(::isWebUrl).orEmpty(),
         title = fetchedOk?.title?.takeIf { it.isNotEmpty() } ?: inputUrl,
         status = status,
     )

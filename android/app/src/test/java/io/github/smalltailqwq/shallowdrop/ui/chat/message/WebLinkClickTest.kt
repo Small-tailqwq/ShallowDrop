@@ -26,6 +26,7 @@ import io.github.smalltailqwq.shallowdrop.core.model.ReplyStatus
 import io.github.smalltailqwq.shallowdrop.core.model.ServerToolInput
 import io.github.smalltailqwq.shallowdrop.core.model.ServerToolKind
 import io.github.smalltailqwq.shallowdrop.core.model.TextCitation
+import io.github.smalltailqwq.shallowdrop.ui.chat.reply.Source
 import io.github.smalltailqwq.shallowdrop.ui.chat.reply.buildReplyView
 import io.github.smalltailqwq.shallowdrop.ui.theme.ShallowDropTheme
 import org.junit.Assert.assertEquals
@@ -45,7 +46,9 @@ class WebLinkClickTest {
     private enum class Entry { Page, Sources, Citation }
     private var url by mutableStateOf("https://example.com/page")
     private var missingActivity = false
-    private var pageListOpen by mutableStateOf(false)
+    private var pageList by mutableStateOf<List<Source>?>(null)
+    /** buildReplyView 已过滤非网页链接；直接给出未过滤的来源，验证点击时的第二道检查 */
+    private var unfiltered = false
     private val opened = mutableListOf<String>()
     private val uriHandler = AndroidUriHandler(object : ContextWrapper(ApplicationProvider.getApplicationContext<Context>()) {
         override fun startActivity(intent: Intent) {
@@ -65,15 +68,17 @@ class WebLinkClickTest {
                         ReplyBlock.Text("来源", citations = listOf(TextCitation(url = url))),
                     ))
                     val view = buildReplyView(message, streaming = false)
+                    val sources = if (unfiltered) listOf(Source(url, "网页来源", "", null, null, null, index = 1)) else view.sources
+                    val markdown = if (unfiltered) "来源[citation:1]" else requireNotNull(view.answer).markdown
                     Surface {
                         when (entry) {
                             Entry.Page -> {
                                 ReplyArea(message, view, streaming = false, hasResponse = true,
-                                    onOpenSources = {}, onOpenPages = { pageListOpen = true })
-                                if (pageListOpen) SourcesSheet(view.sources, onDismiss = { pageListOpen = false })
+                                    onOpenSources = {}, onOpenPages = { pageList = it })
+                                pageList?.let { SourcesSheet(it, onDismiss = { pageList = null }) }
                             }
-                            Entry.Sources -> SourcesSheet(view.sources, onDismiss = {})
-                            Entry.Citation -> MessageMarkdown(requireNotNull(view.answer).markdown, view.sources)
+                            Entry.Sources -> SourcesSheet(sources, onDismiss = {})
+                            Entry.Citation -> MessageMarkdown(markdown, sources)
                         }
                     }
                 }
@@ -82,7 +87,8 @@ class WebLinkClickTest {
     }
 
     private fun click(entry: Entry) {
-        if (entry == Entry.Page && !pageListOpen) {
+        if (entry == Entry.Page) {
+            compose.runOnIdle { pageList = null }
             compose.onNodeWithText("浏览 1 个页面").assertIsDisplayed().performClick()
         }
         if (entry == Entry.Citation) {
@@ -93,6 +99,7 @@ class WebLinkClickTest {
     }
 
     private fun rejectsNonWebLinks(entry: Entry) {
+        unfiltered = entry != Entry.Page
         show(entry)
         val invalid = listOf(
             "intent://example.com/#Intent;scheme=custom;end",

@@ -41,6 +41,26 @@ class ReplyViewTest {
     }
 
     @Test
+    fun nonWebUrlsAreNotListedOrLinked() {
+        val bad = WebSearchResult(title = "Bad", url = "javascript:alert(1)")
+        val view = buildReplyView(
+            reply(
+                search("s1", "q"),
+                ReplyBlock.WebSearchToolResult("s1", listOf(bad, r1), kind = ServerToolKind.Search),
+                ReplyBlock.ServerToolUse("o1", "deepseek_read_url", ServerToolInput.OpenPage("file:///etc/hosts"), ServerToolKind.DeepSearch),
+                ReplyBlock.WebFetchToolResult("o1", url = "file:///etc/hosts", kind = ServerToolKind.DeepSearch),
+                ReplyBlock.Text("Hi", citations = listOf(TextCitation(url = "data:text/html,x"), TextCitation(url = r1.url))),
+            ),
+            streaming = false,
+        )
+        assertEquals(listOf(r1.url), view.sources.map { it.url })
+        assertEquals(listOf(1), view.searchResults.map { it.index })
+        assertEquals("Hi[citation:1]", view.answer?.markdown)
+        val page = (view.steps.filterIsInstance<Step.Open>().single()).pages.single()
+        assertEquals("", page.url)
+    }
+
+    @Test
     fun normalSearchMergesByKindAndMissingResultFailsWhenDone() {
         val view = buildReplyView(
             reply(

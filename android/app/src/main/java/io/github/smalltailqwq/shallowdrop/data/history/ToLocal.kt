@@ -1,5 +1,6 @@
 package io.github.smalltailqwq.shallowdrop.data.history
 
+import io.github.smalltailqwq.shallowdrop.core.isWebUrl
 import io.github.smalltailqwq.shallowdrop.core.model.FileAttachment
 import io.github.smalltailqwq.shallowdrop.core.model.Message
 import io.github.smalltailqwq.shallowdrop.core.model.ReplyBlock
@@ -14,7 +15,6 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** 转换后的会话，以及本会话目录下应存在的图片：ZIP 条目名 → 文件 ID。 */
 data class LocalSession(val session: Session, val images: Map<String, String>)
@@ -24,9 +24,6 @@ internal object ToLocal {
     private const val UNAVAILABLE = "unavailable"
 
     private fun time(value: String): Long = ArchiveTime.parseMillis(value) ?: fail(HistoryErrorCodes.INCOMPLETE)
-
-    /** 链接会渲染成 href，只接受 HTTP / HTTPS（OkHttp 的解析器与 WHATWG URL 基本一致）。 */
-    fun isWebUrl(value: String): Boolean = value.toHttpUrlOrNull() != null
 
     private fun toFile(file: FileEntry) = FileAttachment(
         id = file.id,
