@@ -1,9 +1,13 @@
 package io.github.smalltailqwq.shallowdrop.ui.voice
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -91,7 +95,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.util.lerp
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.smalltailqwq.shallowdrop.R
@@ -129,15 +135,24 @@ fun VoiceScreen(
     val settings by viewModel.settingsState.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
+    val activity = LocalActivity.current
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission(), viewModel::onPermissionResult)
+    val micGranted = { ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED }
     val requestOrStart = {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            viewModel.onPermissionResult(true)
-        } else {
-            permission.launch(Manifest.permission.RECORD_AUDIO)
+        when {
+            micGranted() -> viewModel.onPermissionResult(true)
+            // 已被拒绝且系统不再弹窗（选了不再询问或连续拒绝两次）：只能去应用设置里打开
+            permissionDenied && activity != null && !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.RECORD_AUDIO) ->
+                context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
+            else -> permission.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
     LaunchedEffect(Unit) { requestOrStart() }
+    // 从系统设置授权回来后直接开始
+    LifecycleResumeEffect(permissionDenied) {
+        if (permissionDenied && micGranted()) viewModel.onPermissionResult(true)
+        onPauseOrDispose { }
+    }
 
     val view = LocalView.current
     DisposableEffect(view) {

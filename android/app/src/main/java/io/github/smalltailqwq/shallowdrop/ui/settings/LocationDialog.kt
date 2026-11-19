@@ -41,6 +41,9 @@ fun locationModeLabel(mode: LocationMode): String = stringResource(when (mode) {
     LocationMode.Custom -> R.string.location_custom
 })
 
+/** 两个一起申请，Android 12+ 才会让用户在精确与大致位置之间选择 */
+private val LOCATION_PERMISSIONS = arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+
 @Composable
 fun LocationDialog(
     initial: LocationPreference,
@@ -56,9 +59,11 @@ fun LocationDialog(
         restore = { LocationPreference(LocationMode.valueOf(it[0]), it[1]) },
     )) { mutableStateOf(initial) }
     var saveAfterPermission by rememberSaveable { mutableStateOf(false) }
+    val hasLocationPermission = { LOCATION_PERMISSIONS.any { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED } }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (draft.mode == LocationMode.Gps) {
-            if (saveAfterPermission && it[Manifest.permission.ACCESS_FINE_LOCATION] == true) onSave(draft)
+            // 用户只给大致位置也可以定位到城市
+            if (saveAfterPermission && it.values.any { granted -> granted }) onSave(draft)
             else viewModel.preview(draft, locale)
         }
         saveAfterPermission = false
@@ -67,16 +72,17 @@ fun LocationDialog(
     LocationDialogContent(
         initial, preview, onSave = {
             draft = it
-            if (it.mode == LocationMode.Gps && ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            if (it.mode == LocationMode.Gps && !hasLocationPermission()) {
                 saveAfterPermission = true
-                permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                permission.launch(LOCATION_PERMISSIONS)
             } else onSave(it)
         }, onDismiss,
         onChanged = { draft = it; viewModel.clear() },
         onPreview = {
             draft = it
             saveAfterPermission = false
-            if (it.mode == LocationMode.Gps) permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            // 已有大致位置时不再申请，否则每次刷新都会弹出「改为确切位置」
+            if (it.mode == LocationMode.Gps && !hasLocationPermission()) permission.launch(LOCATION_PERMISSIONS)
             else viewModel.preview(it, locale)
         },
         onPermissions = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) },

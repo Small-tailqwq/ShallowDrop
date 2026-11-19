@@ -42,17 +42,22 @@ class AndroidLocationProvider(private val context: Context, private val ipApi: I
 
     @SuppressLint("MissingPermission")
     private suspend fun gpsPlace(locale: Locale): String {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            throw problem(R.string.location_permission_required)
-        }
+        // 结果只取到城市或约公里级坐标，大致位置权限已足够；有精确权限时才用 GPS 卫星定位
+        val fine = granted(Manifest.permission.ACCESS_FINE_LOCATION)
+        if (!fine && !granted(Manifest.permission.ACCESS_COARSE_LOCATION)) throw problem(R.string.location_permission_required)
         val manager = context.getSystemService(LocationManager::class.java)
-        if (!manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) throw problem(R.string.location_gps_disabled)
+        val provider = listOfNotNull(
+            LocationManager.GPS_PROVIDER.takeIf { fine },
+            if (Build.VERSION.SDK_INT >= 31) LocationManager.FUSED_PROVIDER else null,
+            LocationManager.NETWORK_PROVIDER,
+        ).firstOrNull { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+            ?: throw problem(R.string.location_gps_disabled)
         val location = withContext(Dispatchers.Main) {
             withTimeoutOrNull(20_000) {
                 suspendCancellableCoroutine<Location?> { continuation ->
                     val signal = CancellationSignal()
                     continuation.invokeOnCancellation { signal.cancel() }
-                    LocationManagerCompat.getCurrentLocation(manager, LocationManager.GPS_PROVIDER, signal, ContextCompat.getMainExecutor(context)) {
+                    LocationManagerCompat.getCurrentLocation(manager, provider, signal, ContextCompat.getMainExecutor(context)) {
                         if (continuation.isActive) continuation.resume(it)
                     }
                 }
@@ -84,6 +89,9 @@ class AndroidLocationProvider(private val context: Context, private val ipApi: I
             }
         } catch (_: IOException) { null }
     }
+
+    private fun granted(permission: String) =
+        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     private fun problem(id: Int) = IOException(context.getString(id))
 }

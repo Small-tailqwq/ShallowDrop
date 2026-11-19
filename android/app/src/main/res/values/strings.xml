@@ -260,11 +260,11 @@
     <string name="share_time">Time and time zone</string>
     <string name="location_mode">Location source</string>
     <string name="location_off">Off</string>
-    <string name="location_gps">Device GPS</string>
+    <string name="location_gps">Device location</string>
     <string name="location_network">Network IP location</string>
     <string name="location_custom">Custom location</string>
     <string name="location_off_hint">Do not include location in new requests. Previously sent locations remain in conversation history.</string>
-    <string name="location_gps_hint">Use device GPS with precise location permission. Use the city from the system geocoder, or coordinates rounded to approximately one kilometre if unavailable.</string>
+    <string name="location_gps_hint">Use device location; approximate location permission is enough. Use the city from the system geocoder, or coordinates rounded to approximately one kilometre if unavailable.</string>
     <string name="location_network_hint">Use ipwho.is to locate the IP reaching that service. It receives your IP, but no API key or chat content. VPNs, proxies and routing rules can affect the result.</string>
     <string name="location_custom_hint">Enter the city or region to use for answers.</string>
     <string name="location_custom_label">City or region</string>
@@ -273,9 +273,9 @@
     <string name="location_refresh">Get / refresh location</string>
     <string name="location_app_permissions">App permissions</string>
     <string name="location_system_settings">Location settings</string>
-    <string name="location_permission_required">GPS requires precise location permission. Grant it in settings or choose another location source.</string>
-    <string name="location_gps_disabled">GPS is disabled. Enable device location or choose another location source.</string>
-    <string name="location_gps_timeout">Could not get a GPS location. Refresh or choose another location source.</string>
+    <string name="location_permission_required">Device location requires location permission. Grant it in settings or choose another location source.</string>
+    <string name="location_gps_disabled">Device location is disabled. Enable it or choose another location source.</string>
+    <string name="location_gps_timeout">Could not get the device location. Refresh or choose another location source.</string>
     <string name="location_network_failed">IP location failed. Check your connection and retry, or choose another location source.</string>
     <string name="location_custom_empty">Enter a custom location first.</string>
     <string name="location_save_failed">Could not save location settings. Please retry.</string>

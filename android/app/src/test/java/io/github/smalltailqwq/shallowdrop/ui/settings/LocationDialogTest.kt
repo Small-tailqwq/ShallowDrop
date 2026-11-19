@@ -25,7 +25,7 @@ class LocationDialogTest {
         compose.setContent { ShallowDropTheme {
             LocationDialogContent(LocationPreference(), LocationPreview(), { saved = it }, {}, {}, { requested = it }, {}, {})
         } }
-        compose.onNodeWithText("设备 GPS 定位").performClick()
+        compose.onNodeWithText("设备定位").performClick()
         compose.onNodeWithText("获取 / 刷新位置").performScrollTo().performClick()
         assertEquals(LocationMode.Gps, requested?.mode)
         compose.onNodeWithText("网络出口 IP 定位").performScrollTo().performClick()

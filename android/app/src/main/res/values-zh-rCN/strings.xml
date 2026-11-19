@@ -249,11 +249,11 @@
     <string name="share_time">时间与时区</string>
     <string name="location_mode">位置来源</string>
     <string name="location_off">关闭</string>
-    <string name="location_gps">设备 GPS 定位</string>
+    <string name="location_gps">设备定位</string>
     <string name="location_network">网络出口 IP 定位</string>
     <string name="location_custom">自定义位置</string>
     <string name="location_off_hint">不向新请求提供位置。已发送到历史对话的位置不会被撤回。</string>
-    <string name="location_gps_hint">通过设备 GPS 获取当前位置，需要精确定位权限。优先使用系统解析的城市；无法解析时使用约到公里的坐标。</string>
+    <string name="location_gps_hint">通过设备定位获取当前位置，授予大致位置即可。优先使用系统解析的城市；无法解析时使用约到公里的坐标。</string>
     <string name="location_network_hint">通过 ipwho.is 查询访问该服务时的出口 IP 所在地区。该服务会接收到你的 IP，不会收到 API Key 或聊天内容；VPN、代理和分流规则可能影响结果。</string>
     <string name="location_custom_hint">直接填写希望用于回答的城市或地区。</string>
     <string name="location_custom_label">城市或地区</string>
@@ -262,9 +262,9 @@
     <string name="location_refresh">获取 / 刷新位置</string>
     <string name="location_app_permissions">应用权限</string>
     <string name="location_system_settings">系统定位设置</string>
-    <string name="location_permission_required">GPS 定位需要精确位置权限，请在设置中授权，或切换位置来源。</string>
-    <string name="location_gps_disabled">设备 GPS 未开启，请打开系统定位或切换位置来源。</string>
-    <string name="location_gps_timeout">未能取得 GPS 位置，请刷新重试或切换位置来源。</string>
+    <string name="location_permission_required">设备定位需要位置权限，请在设置中授权，或切换位置来源。</string>
+    <string name="location_gps_disabled">设备定位未开启，请打开系统定位或切换位置来源。</string>
+    <string name="location_gps_timeout">未能取得设备位置，请刷新重试或切换位置来源。</string>
     <string name="location_network_failed">网络出口定位失败，请检查网络后重试或切换位置来源。</string>
     <string name="location_custom_empty">请先填写自定义位置。</string>
     <string name="location_save_failed">位置设置保存失败，请重试。</string>
